@@ -279,8 +279,8 @@ export default function InventoryManager({ equipment }: InventoryManagerProps) {
   return (
     <>
       {successMsg && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-3.5 text-sm font-medium text-emerald-700 shadow-xl">
-          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white">
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-[24px] border border-emerald-200/75 bg-white/90 px-5 py-3.5 text-sm font-medium text-slate-700 shadow-[0_18px_48px_rgba(15,23,42,0.10)] backdrop-blur-xl">
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-400/85 text-white">
             <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" className="h-3 w-3">
               <polyline points="2,6 5,9 10,3" />
             </svg>
@@ -290,13 +290,13 @@ export default function InventoryManager({ equipment }: InventoryManagerProps) {
       )}
 
       <SurfaceCard className="p-0">
-        <div className="border-b border-slate-100 px-6 py-5">
+        <div className="border-b border-slate-100 px-4 py-4 sm:px-6 sm:py-5">
           <SectionHeader
             title="设备列表"
             description="管理设备资产与状态。"
             meta={
-              <div className="flex items-center gap-3">
-                <span className="text-sm text-slate-400">{equipment.length} 台</span>
+              <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
+                <StatBadge tone="slate">{equipment.length} 台</StatBadge>
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -317,16 +317,16 @@ export default function InventoryManager({ equipment }: InventoryManagerProps) {
             }
           />
           {previewError ? (
-            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">{previewError}</div>
+            <div className="mt-4 rounded-[20px] border border-rose-200/80 bg-rose-50/80 px-4 py-3 text-sm text-rose-600">{previewError}</div>
           ) : null}
         </div>
 
-        <div className="px-6 pb-6 pt-4">
+        <div className="px-4 pb-4 pt-4 sm:px-6 sm:pb-6">
           <TableShell>
             {equipment.length === 0 ? (
               <EmptyState>暂无设备，请点击右上角「+ 创建库存」添加</EmptyState>
             ) : (
-              <table className="w-full min-w-[900px] text-sm">
+              <table className="w-full min-w-[820px] text-sm">
                 <TableHead>
                   <tr>
                     <Th>设备名称</Th>
@@ -347,8 +347,8 @@ export default function InventoryManager({ equipment }: InventoryManagerProps) {
                         <Td className="font-medium text-slate-900">{eq.name}</Td>
                         <Td>{eq.category || '—'}</Td>
                         <Td className="font-mono text-xs text-slate-500">{eq.serial_number || '—'}</Td>
-                        <Td>¥{Number(eq.daily_fee).toFixed(2)}</Td>
-                        <Td>¥{Number(eq.deposit).toFixed(2)}</Td>
+                        <Td className="font-semibold text-slate-900">¥{Number(eq.daily_fee).toFixed(2)}</Td>
+                        <Td className="font-semibold text-slate-900">¥{Number(eq.deposit).toFixed(2)}</Td>
                         <Td>
                           <StatBadge tone={cfg.tone} dot>{cfg.label}</StatBadge>
                         </Td>
@@ -382,7 +382,7 @@ export default function InventoryManager({ equipment }: InventoryManagerProps) {
         footer={
           <div className="flex flex-wrap justify-end gap-3">
             {serverError && (
-              <div className="w-full rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">{serverError}</div>
+              <div className="w-full rounded-[20px] border border-rose-200/80 bg-rose-50/80 px-4 py-3 text-sm text-rose-600">{serverError}</div>
             )}
             <SecondaryButton onClick={closeModal} disabled={isPending}>取消</SecondaryButton>
             <PrimaryButton onClick={handleCreate} disabled={isPending}>{isPending ? '创建中...' : '确认创建'}</PrimaryButton>
@@ -459,7 +459,7 @@ export default function InventoryManager({ equipment }: InventoryManagerProps) {
         footer={
           <div className="flex flex-wrap justify-end gap-3">
             {previewError ? (
-              <div className="w-full rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">{previewError}</div>
+              <div className="w-full rounded-[20px] border border-rose-200/80 bg-rose-50/80 px-4 py-3 text-sm text-rose-600">{previewError}</div>
             ) : null}
             <SecondaryButton onClick={closePreviewModal} disabled={isPending}>取消</SecondaryButton>
             <PrimaryButton onClick={handleBulkImport} disabled={isPending || validPreviewRecords.length === 0}>
@@ -469,28 +469,28 @@ export default function InventoryManager({ equipment }: InventoryManagerProps) {
         }
       >
         <div className="grid gap-4 md:grid-cols-3">
-          <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
+          <div className="rounded-[22px] border border-slate-200/70 bg-white/76 p-4">
             <p className="text-sm text-slate-500">总记录</p>
             <p className="mt-2 text-2xl font-semibold text-slate-900">{previewRecords.length}</p>
           </div>
-          <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
+          <div className="rounded-[22px] border border-emerald-200/70 bg-emerald-50/72 p-4">
             <p className="text-sm text-emerald-700">有效记录</p>
-            <p className="mt-2 text-2xl font-semibold text-emerald-700">{validPreviewRecords.length}</p>
+            <p className="mt-2 text-2xl font-semibold text-slate-900">{validPreviewRecords.length}</p>
           </div>
-          <div className="rounded-2xl border border-amber-100 bg-amber-50/70 p-4">
+          <div className="rounded-[22px] border border-amber-200/70 bg-amber-50/72 p-4">
             <p className="text-sm text-amber-700">无效记录</p>
-            <p className="mt-2 text-2xl font-semibold text-amber-700">{invalidPreviewRecords.length}</p>
+            <p className="mt-2 text-2xl font-semibold text-slate-900">{invalidPreviewRecords.length}</p>
           </div>
         </div>
 
         {invalidPreviewRecords.length > 0 ? (
-          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          <div className="mt-4 rounded-[20px] border border-amber-200/80 bg-amber-50/80 px-4 py-3 text-sm text-amber-700">
             检测到 {invalidPreviewRecords.length} 条无效数据，提交时将自动跳过，仅导入有效行。
           </div>
         ) : null}
 
         <TableShell>
-          <table className="w-full min-w-[1120px] text-sm">
+          <table className="w-full min-w-[980px] text-sm">
             <TableHead>
               <tr>
                 <Th>Excel 行</Th>
@@ -505,24 +505,21 @@ export default function InventoryManager({ equipment }: InventoryManagerProps) {
             </TableHead>
             <tbody>
               {previewRecords.map((record) => (
-                <Tr key={`${record.rowNumber}-${record.name}-${record.serial_number}`} className={record.issues.length > 0 ? 'bg-amber-50/50 hover:bg-amber-50/70' : ''}>
+                <Tr key={`${record.rowNumber}-${record.name}-${record.serial_number}`} className={record.issues.length > 0 ? 'bg-amber-50/38 hover:!bg-amber-50/55' : ''}>
                   <Td>第 {record.rowNumber} 行</Td>
                   <Td className="font-medium text-slate-900">{record.name || '—'}</Td>
                   <Td>{record.category || '—'}</Td>
                   <Td className="font-mono text-xs text-slate-500">{record.serial_number || '—'}</Td>
-                  <Td>¥{record.daily_fee.toFixed(2)}</Td>
-                  <Td>¥{record.deposit.toFixed(2)}</Td>
+                  <Td className="font-semibold text-slate-900">¥{record.daily_fee.toFixed(2)}</Td>
+                  <Td className="font-semibold text-slate-900">¥{record.deposit.toFixed(2)}</Td>
                   <Td>{record.warranty_expire_date || '—'}</Td>
                   <Td>
                     {record.issues.length === 0 ? (
-                      <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">可导入</span>
+                      <StatBadge tone="emerald">可导入</StatBadge>
                     ) : (
-                      <div className="flex flex-wrap gap-2">
-                        {record.issues.map((issue) => (
-                          <span key={issue} className="inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700">
-                            {issue}
-                          </span>
-                        ))}
+                      <div className="space-y-1">
+                        <StatBadge tone="amber">需修正</StatBadge>
+                        <p className="text-xs text-amber-700">{record.issues.join('；')}</p>
                       </div>
                     )}
                   </Td>

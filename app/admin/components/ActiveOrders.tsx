@@ -92,7 +92,7 @@ export default function ActiveOrders({ orders }: ActiveOrdersProps) {
         {displayOrders.length === 0 ? (
           <EmptyState>暂无租用中订单</EmptyState>
         ) : (
-          <table className="w-full min-w-[1180px] text-sm">
+          <table className="w-full min-w-[960px] text-sm">
             <TableHead>
               <tr>
                 <Th>设备</Th>
@@ -129,7 +129,7 @@ export default function ActiveOrders({ orders }: ActiveOrdersProps) {
                     </Td>
                     <Td>
                       <div className="space-y-1">
-                        <p className="max-w-[200px] truncate text-sm text-slate-700" title={order.shipping_address || '—'}>
+                        <p className="max-w-[140px] truncate text-sm text-slate-700 sm:max-w-[200px]" title={order.shipping_address || '—'}>
                           {order.shipping_address || '—'}
                         </p>
                         <p className="text-xs text-slate-400">{order.shipping_method || '待确认发货方式'}</p>

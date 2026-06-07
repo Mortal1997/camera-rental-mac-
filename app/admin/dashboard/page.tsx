@@ -1,6 +1,6 @@
 import { getAdminData } from '../../actions/admin-actions';
 import { Boxes, ChartColumn, CircleDollarSign, PackageCheck } from 'lucide-react';
-import { EmptyState, MetricCard, PageHeader, SectionHeader, SurfaceCard, TableHead, TableShell, Td, Th, Tr } from '../components/ui';
+import { EmptyState, MetricCard, PageHeader, SectionHeader, SurfaceCard, TableHead, TableShell, Td, Th, Tr, InfoTile, StatBadge } from '../components/ui';
 
 export const dynamic = 'force-dynamic';
 
@@ -129,14 +129,14 @@ export default async function DashboardPage() {
         eyebrow="Dashboard"
         title="数据看板"
         description={`从全局视角查看 ${monthLabel} 的营业情况、设备状态与单机创收表现。`}
-        meta={<div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600">统计周期：{monthLabel}</div>}
+        meta={<StatBadge tone="slate">统计周期：{monthLabel}</StatBadge>}
       />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard icon={CircleDollarSign} iconClassName="bg-emerald-50 text-emerald-600" label="当月总营业额" value={formatCurrency(monthlyRevenue)} valueClassName="text-emerald-600" hint={<span className={revenueDelta.tone}>{revenueDelta.label}</span>} />
-        <MetricCard icon={ChartColumn} iconClassName="bg-blue-50 text-blue-600" label="当月订单总数" value={monthlyOrderCount} hint={<span className={orderDelta.tone}>{orderDelta.label}</span>} />
-        <MetricCard icon={PackageCheck} iconClassName="bg-indigo-50 text-indigo-600" label="当前在外租赁机器数" value={statusSummary.outbound} valueClassName="text-blue-600" hint="含待发货 / 已确认 / 使用中设备" />
-        <MetricCard icon={Boxes} iconClassName="bg-violet-50 text-violet-600" label="当前在库闲置数" value={statusSummary.idle} valueClassName="text-violet-600" hint="不含维修中设备" />
+        <MetricCard icon={CircleDollarSign} iconClassName="bg-emerald-50/75 text-emerald-700" label="当月总营业额" value={formatCurrency(monthlyRevenue)} valueClassName="text-slate-900" hint={<span className={revenueDelta.tone}>{revenueDelta.label}</span>} />
+        <MetricCard icon={ChartColumn} iconClassName="bg-sky-50/75 text-sky-700" label="当月订单总数" value={monthlyOrderCount} hint={<span className={orderDelta.tone}>{orderDelta.label}</span>} />
+        <MetricCard icon={PackageCheck} iconClassName="bg-slate-100 text-slate-700" label="当前在外租赁机器数" value={statusSummary.outbound} valueClassName="text-slate-900" hint="含待发货 / 已确认 / 使用中设备" />
+        <MetricCard icon={Boxes} iconClassName="bg-slate-100 text-slate-700" label="当前在库闲置数" value={statusSummary.idle} valueClassName="text-slate-900" hint="不含维修中设备" />
       </div>
 
       <div className="grid gap-6 xl:grid-cols-2">
@@ -147,15 +147,15 @@ export default async function DashboardPage() {
               <EmptyState>暂无数据</EmptyState>
             ) : (
               categoryStats.map((item) => (
-                <div key={item.category} className="space-y-2">
+                <InfoTile key={item.category} className="space-y-2.5">
                   <div className="flex items-center justify-between text-sm">
                     <span className="font-medium text-slate-700">{item.category}</span>
                     <span className="text-slate-400">{item.count} 台</span>
                   </div>
-                  <div className="h-1.5 rounded-full bg-slate-100">
-                    <div className="h-1.5 rounded-full bg-indigo-500" style={{ width: `${(item.count / maxCategoryCount) * 100}%` }} />
+                  <div className="h-1.5 rounded-full bg-slate-100/90">
+                    <div className="h-1.5 rounded-full bg-slate-700/75" style={{ width: `${(item.count / maxCategoryCount) * 100}%` }} />
                   </div>
-                </div>
+                </InfoTile>
               ))
             )}
           </div>
@@ -168,11 +168,11 @@ export default async function DashboardPage() {
               <EmptyState>暂无数据</EmptyState>
             ) : (
               [
-                { label: '正常闲置', count: statusSummary.idle, bar: 'bg-emerald-500', text: 'text-emerald-600' },
-                { label: '出租中 / 待发货', count: statusSummary.outbound, bar: 'bg-blue-500', text: 'text-blue-600' },
-                { label: '维修中', count: statusSummary.maintenance, bar: 'bg-red-500', text: 'text-red-600' },
+                { label: '正常闲置', count: statusSummary.idle, bar: 'bg-emerald-400/85', text: 'text-slate-900' },
+                { label: '出租中 / 待发货', count: statusSummary.outbound, bar: 'bg-sky-400/85', text: 'text-slate-900' },
+                { label: '维修中', count: statusSummary.maintenance, bar: 'bg-rose-400/85', text: 'text-slate-900' },
               ].map((item) => (
-                <div key={item.label} className="rounded-xl border border-slate-100 p-4">
+                <InfoTile key={item.label} className="space-y-3 p-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <span className={`h-2.5 w-2.5 rounded-full ${item.bar}`} />
@@ -180,10 +180,10 @@ export default async function DashboardPage() {
                     </div>
                     <span className={`text-xl font-semibold ${item.text}`}>{item.count}</span>
                   </div>
-                  <div className="mt-3 h-1.5 rounded-full bg-slate-100">
+                  <div className="h-1.5 rounded-full bg-slate-100/90">
                     <div className={`h-1.5 rounded-full ${item.bar}`} style={{ width: `${totalStatus === 0 ? 0 : (item.count / totalStatus) * 100}%` }} />
                   </div>
-                </div>
+                </InfoTile>
               ))
             )}
           </div>
@@ -213,7 +213,7 @@ export default async function DashboardPage() {
                     <Td className="font-medium text-slate-900">{item.equipmentName}</Td>
                     <Td className="font-mono text-xs text-slate-500">{item.serialNumber}</Td>
                     <Td>{item.orderCount}</Td>
-                    <Td className="font-semibold text-emerald-600">{formatCurrency(item.revenue)}</Td>
+                    <Td className="font-semibold text-slate-900">{formatCurrency(item.revenue)}</Td>
                   </Tr>
                 ))}
               </tbody>

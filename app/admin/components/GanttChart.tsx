@@ -20,7 +20,7 @@ import {
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { updateOrderStatus } from '../../actions/admin-actions';
 import type { EquipmentWithOrders, Order } from '../../actions/types';
-import { EmptyState, Modal, PrimaryButton, SecondaryButton, SelectInput, SectionHeader, StatBadge, SurfaceCard, TextInput, cn } from './ui';
+import { EmptyState, FilterPanel, InfoTile, Modal, PrimaryButton, SecondaryButton, SelectInput, SectionHeader, StatBadge, SurfaceCard, TextInput, cn } from './ui';
 
 interface GanttChartProps {
   equipment: EquipmentWithOrders[];
@@ -59,8 +59,8 @@ const HOLIDAYS_2026 = [
   '2026-10-07',
 ];
 
-const STICKY_COLUMN_WIDTH = 176;
-const DAY_COLUMN_WIDTH = 76;
+const STICKY_COLUMN_WIDTH = 132;
+const DAY_COLUMN_WIDTH = 70;
 const PAST_DAYS = 30;
 const FUTURE_DAYS = 60;
 const SCROLL_STEP_DAYS = 7;
@@ -69,43 +69,58 @@ function getStatusPill(status: string) {
   if (status === 'pending_payment' || status === 'confirmed') {
     return {
       label: '待发货',
-      bar: 'bg-blue-500/95 ring-1 ring-blue-300/50',
+      bar: 'bg-sky-400/85 ring-1 ring-white/70 text-slate-900',
       tone: 'blue' as const,
-      accent: 'bg-blue-100 text-blue-700',
+      accent: 'bg-sky-50/90 text-sky-700 border border-sky-200/70',
     };
   }
   if (status === 'using') {
     return {
       label: '租用中',
-      bar: 'bg-amber-500/95 ring-1 ring-amber-300/50',
+      bar: 'bg-amber-400/85 ring-1 ring-white/70 text-slate-900',
       tone: 'amber' as const,
-      accent: 'bg-amber-100 text-amber-700',
+      accent: 'bg-amber-50/90 text-amber-700 border border-amber-200/70',
     };
   }
   if (status === 'returned') {
     return {
       label: '已完成',
-      bar: 'bg-emerald-500/95 ring-1 ring-emerald-300/50',
+      bar: 'bg-emerald-400/85 ring-1 ring-white/70 text-slate-900',
       tone: 'emerald' as const,
-      accent: 'bg-emerald-100 text-emerald-700',
+      accent: 'bg-emerald-50/90 text-emerald-700 border border-emerald-200/70',
     };
   }
   return {
     label: status,
-    bar: 'bg-slate-500/95 ring-1 ring-slate-300/50',
+    bar: 'bg-slate-300/92 ring-1 ring-white/70 text-slate-900',
     tone: 'slate' as const,
-    accent: 'bg-slate-100 text-slate-700',
+    accent: 'bg-slate-50/90 text-slate-700 border border-slate-200/70',
   };
 }
 
 function getEquipmentStatusBadge(status: EquipmentWithOrders['status']) {
   if (status === 'available') {
-    return { label: '空闲', tone: 'emerald' as const, icon: CheckCircle2 };
+    return { icon: CheckCircle2 };
   }
   if (status === 'rented') {
-    return { label: '已出租', tone: 'amber' as const, icon: Package2 };
+    return { icon: Package2 };
   }
-  return { label: '维护中', tone: 'red' as const, icon: Wrench };
+  return { icon: Wrench };
+}
+
+function getEquipmentStatusDotTone(orders: Order[], fallbackStatus: EquipmentWithOrders['status']) {
+  const activeOrder = orders.find((order) => order.status === 'using') ?? orders.find((order) => order.status === 'pending_payment' || order.status === 'confirmed') ?? orders.find((order) => order.status === 'returned');
+
+  if (activeOrder) {
+    const pill = getStatusPill(activeOrder.status);
+    if (pill.tone === 'blue') return 'bg-sky-400 text-white';
+    if (pill.tone === 'amber') return 'bg-amber-400 text-white';
+    if (pill.tone === 'emerald') return 'bg-emerald-400 text-white';
+  }
+
+  if (fallbackStatus === 'available') return 'bg-sky-400 text-white';
+  if (fallbackStatus === 'rented') return 'bg-amber-400 text-white';
+  return 'bg-emerald-400 text-white';
 }
 
 function formatDayLabel(date: Date) {
@@ -147,9 +162,9 @@ function isSameDay(left: Date, right: Date) {
 }
 
 function getColumnTone({ holiday, weekend, todayColumn }: { holiday: boolean; weekend: boolean; todayColumn: boolean }) {
-  if (todayColumn) return 'bg-blue-50/70';
-  if (holiday) return 'bg-red-50/80';
-  if (weekend) return 'bg-slate-50';
+  if (todayColumn) return 'bg-sky-50/70';
+  if (holiday) return 'bg-rose-50/65';
+  if (weekend) return 'bg-slate-50/70';
   return '';
 }
 
@@ -210,13 +225,13 @@ function InfoCard({
   value: string;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+    <InfoTile className="p-4">
       <div className="flex items-center gap-2 text-slate-400">
         <Icon className="h-4 w-4" />
-        <span className="text-xs font-semibold uppercase tracking-[0.16em]">{label}</span>
+        <span className="text-[11px] font-medium uppercase tracking-[0.14em]">{label}</span>
       </div>
       <p className="mt-3 text-sm font-medium text-slate-700">{value}</p>
-    </div>
+    </InfoTile>
   );
 }
 
@@ -260,43 +275,75 @@ export default function GanttChart({ equipment }: GanttChartProps) {
     return groups;
   }, [days]);
 
-  const categories = useMemo(() => {
-    return Array.from(new Set(equipment.map((item) => item.category?.trim()).filter(Boolean))) as string[];
-  }, [equipment]);
+  const categories = useMemo(
+    () => Array.from(new Set(equipment.map((item) => item.category).filter(Boolean))) as string[],
+    [equipment]
+  );
 
   const filteredEquipment = useMemo(() => {
-    const normalizedSearch = searchTerm.trim().toLowerCase();
-
+    const term = searchTerm.trim().toLowerCase();
     return equipment.filter((item) => {
       const matchesSearch =
-        !normalizedSearch ||
-        item.name.toLowerCase().includes(normalizedSearch) ||
-        item.serial_number?.toLowerCase().includes(normalizedSearch) ||
-        item.orders.some((order) => (order.customer_name ?? '').toLowerCase().includes(normalizedSearch));
+        !term ||
+        item.name.toLowerCase().includes(term) ||
+        (item.serial_number ?? '').toLowerCase().includes(term) ||
+        item.orders.some((order) => (order.customer_name ?? '').toLowerCase().includes(term));
 
-      const matchesCategory = categoryFilter === 'all' || (item.category ?? '') === categoryFilter;
+      const matchesCategory = categoryFilter === 'all' || item.category === categoryFilter;
       const matchesStatus = matchesStatusFilter(item.orders, statusFilter);
 
       return matchesSearch && matchesCategory && matchesStatus;
     });
-  }, [categoryFilter, equipment, searchTerm, statusFilter]);
+  }, [equipment, searchTerm, categoryFilter, statusFilter]);
 
-  const totalOrders = useMemo(() => filteredEquipment.reduce((sum, item) => sum + item.orders.length, 0), [filteredEquipment]);
+  const totalOrders = useMemo(
+    () => filteredEquipment.reduce((sum, item) => sum + item.orders.length, 0),
+    [filteredEquipment]
+  );
 
   const currentStatus = selectedOrder ? getStatusPill(selectedOrder.order.status) : null;
   const nextStatusAction = selectedOrder ? getNextStatusAction(selectedOrder.order) : null;
 
-  const scrollToDayIndex = (dayIndex: number) => {
-    const scroller = scrollRef.current;
-    if (!scroller) return;
-    const targetLeft = dayIndex * DAY_COLUMN_WIDTH - DAY_COLUMN_WIDTH * 1.5;
-    scroller.scrollTo({ left: Math.max(targetLeft, 0), behavior: 'smooth' });
+  useEffect(() => {
+    if (!scrollRef.current) return;
+    scrollRef.current.scrollLeft = PAST_DAYS * DAY_COLUMN_WIDTH - STICKY_COLUMN_WIDTH * 0.2;
+  }, []);
+
+  const stopDragging = () => {
+    dragStateRef.current.isDown = false;
+    setIsDragging(false);
   };
 
-  const scrollByDays = (direction: -1 | 1) => {
-    const scroller = scrollRef.current;
-    if (!scroller) return;
-    scroller.scrollBy({ left: direction * DAY_COLUMN_WIDTH * SCROLL_STEP_DAYS, behavior: 'smooth' });
+  const handleMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
+    if ((event.target as HTMLElement).closest('button, input, select, textarea, a')) return;
+    dragStateRef.current = {
+      isDown: true,
+      startX: event.pageX,
+      scrollLeft: scrollRef.current?.scrollLeft ?? 0,
+    };
+    setIsDragging(true);
+  };
+
+  const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!dragStateRef.current.isDown || !scrollRef.current) return;
+    const delta = event.pageX - dragStateRef.current.startX;
+    scrollRef.current.scrollLeft = dragStateRef.current.scrollLeft - delta;
+  };
+
+  const scrollToDayIndex = (dayIndex: number) => {
+    if (!scrollRef.current) return;
+    scrollRef.current.scrollTo({
+      left: dayIndex * DAY_COLUMN_WIDTH,
+      behavior: 'smooth',
+    });
+  };
+
+  const scrollByDays = (direction: number) => {
+    if (!scrollRef.current) return;
+    scrollRef.current.scrollBy({
+      left: direction * SCROLL_STEP_DAYS * DAY_COLUMN_WIDTH,
+      behavior: 'smooth',
+    });
   };
 
   const resetFilters = () => {
@@ -305,95 +352,49 @@ export default function GanttChart({ equipment }: GanttChartProps) {
     setCategoryFilter('all');
   };
 
-  useEffect(() => {
-    scrollToDayIndex(PAST_DAYS);
-  }, []);
-
-  useEffect(() => {
-    if (!copyMessage) return;
-    const timer = window.setTimeout(() => setCopyMessage(null), 2000);
-    return () => window.clearTimeout(timer);
-  }, [copyMessage]);
-
-  const handleMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
-    const scroller = scrollRef.current;
-    if (!scroller) return;
-
-    dragStateRef.current = {
-      isDown: true,
-      startX: event.pageX - scroller.offsetLeft,
-      scrollLeft: scroller.scrollLeft,
-    };
-    setIsDragging(true);
-  };
-
-  const stopDragging = () => {
-    dragStateRef.current.isDown = false;
-    setIsDragging(false);
-  };
-
-  const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
-    const scroller = scrollRef.current;
-    if (!scroller || !dragStateRef.current.isDown) return;
-
-    event.preventDefault();
-    const x = event.pageX - scroller.offsetLeft;
-    const walk = x - dragStateRef.current.startX;
-    scroller.scrollLeft = dragStateRef.current.scrollLeft - walk;
-  };
-
-  const handleCopy = async (content: string, message: string) => {
+  const handleCopy = async (text: string, message: string) => {
+    if (!text) return;
     try {
-      await navigator.clipboard.writeText(content);
+      await navigator.clipboard.writeText(text);
       setCopyMessage(message);
       setActionError(null);
     } catch {
-      setActionError('复制失败，请检查浏览器权限');
+      setActionError('复制失败，请手动复制');
     }
   };
 
   const handleStatusAction = () => {
     if (!selectedOrder || !nextStatusAction) return;
 
-    const trackingNumber = trackingNumberInput.trim();
-    if (nextStatusAction.requireTracking && !trackingNumber) {
-      setActionError('发货前请先填写运单号');
-      return;
-    }
-
-    if (nextStatusAction.requireTracking && !confirmShip) {
-      setActionError('请先确认本次发货信息无误');
-      return;
-    }
-
     setActionError(null);
     startTransition(async () => {
       const result = await updateOrderStatus(
         selectedOrder.order.id,
         nextStatusAction.nextStatus,
-        nextStatusAction.requireTracking ? trackingNumber : selectedOrder.order.tracking_number,
+        nextStatusAction.requireTracking ? trackingNumberInput || undefined : undefined,
         selectedOrder.equipmentId
       );
 
       if (!result.success) {
-        setActionError(result.error ?? '更新订单状态失败');
+        setActionError(result.error ?? '状态更新失败，请稍后重试');
         return;
       }
 
-      setSelectedOrder({
-        ...selectedOrder,
-        order: {
-          ...selectedOrder.order,
-          status: nextStatusAction.nextStatus as Order['status'],
-          tracking_number: nextStatusAction.requireTracking ? trackingNumber : selectedOrder.order.tracking_number,
-        },
-      });
-
-      setConfirmShip(false);
+      setCopyMessage(nextStatusAction.nextStatus === 'using' ? '已完成发货，设备状态已同步为出租中' : '已完成归还，设备状态已同步为空闲');
+      setSelectedOrder((current) =>
+        current
+          ? {
+              ...current,
+              order: {
+                ...current.order,
+                status: nextStatusAction.nextStatus,
+                tracking_number: nextStatusAction.requireTracking ? trackingNumberInput : current.order.tracking_number,
+              },
+            }
+          : null
+      );
       if (nextStatusAction.requireTracking) {
-        setCopyMessage('已完成发货并保存运单号');
-      } else {
-        setCopyMessage('已完成归还，设备状态已同步为空闲');
+        setConfirmShip(false);
       }
     });
   };
@@ -401,26 +402,17 @@ export default function GanttChart({ equipment }: GanttChartProps) {
   return (
     <>
       <SurfaceCard className="p-0">
-        <div className="border-b border-slate-100 px-6 py-5">
+        <div className="border-b border-slate-100 px-4 py-4 sm:px-6 sm:py-5">
           <SectionHeader
             title="排期看板"
             description="显示过去 30 天到未来 60 天内所有设备的租赁安排。"
             meta={<span>{filteredEquipment.length} / {equipment.length} 台设备</span>}
           />
 
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <StatBadge tone="blue">待发货</StatBadge>
-            <StatBadge tone="amber">租用中</StatBadge>
-            <StatBadge tone="emerald">已完成</StatBadge>
-            <StatBadge tone="red">法定节假日</StatBadge>
-            <StatBadge tone="slate">周末</StatBadge>
-            <StatBadge tone="indigo">今日列</StatBadge>
-          </div>
-
-          <div className="mt-5 grid gap-3 rounded-2xl border border-slate-100 bg-slate-50/70 p-4 xl:grid-cols-[minmax(0,1.3fr)_auto] xl:items-end">
-            <div className="grid gap-3 md:grid-cols-3">
+          <FilterPanel className="xl:grid-cols-[minmax(0,1.3fr)_auto] xl:items-end">
+            <div className="grid gap-4 md:grid-cols-3">
               <div>
-                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">搜索</p>
+                <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">搜索</p>
                 <TextInput
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
@@ -428,7 +420,7 @@ export default function GanttChart({ equipment }: GanttChartProps) {
                 />
               </div>
               <div>
-                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">订单状态</p>
+                <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">订单状态</p>
                 <SelectInput value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
                   <option value="all">全部状态</option>
                   <option value="pending_payment">待支付</option>
@@ -439,7 +431,7 @@ export default function GanttChart({ equipment }: GanttChartProps) {
                 </SelectInput>
               </div>
               <div>
-                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">设备分类</p>
+                <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">设备分类</p>
                 <SelectInput value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
                   <option value="all">全部分类</option>
                   {categories.map((category) => (
@@ -465,11 +457,11 @@ export default function GanttChart({ equipment }: GanttChartProps) {
                 </SecondaryButton>
               </div>
               <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                <span className="rounded-full bg-white px-3 py-1 shadow-sm">范围：{toDateKey(days[0])} ~ {toDateKey(days[days.length - 1])}</span>
-                <span className="rounded-full bg-white px-3 py-1 shadow-sm">当前结果：{filteredEquipment.length} 台 / {totalOrders} 条排期</span>
+                <StatBadge tone="slate">范围：{toDateKey(days[0])} ~ {toDateKey(days[days.length - 1])}</StatBadge>
+                <StatBadge tone="slate">当前结果：{filteredEquipment.length} 台 / {totalOrders} 条排期</StatBadge>
               </div>
             </div>
-          </div>
+          </FilterPanel>
         </div>
 
         <div
@@ -479,22 +471,22 @@ export default function GanttChart({ equipment }: GanttChartProps) {
           onMouseUp={stopDragging}
           onMouseMove={handleMouseMove}
           className={cn(
-            'overflow-x-auto p-4 select-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
+            'overflow-x-auto overflow-y-visible p-4 select-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
             isDragging ? 'cursor-grabbing' : 'cursor-grab'
           )}
         >
           {filteredEquipment.length === 0 ? (
             <EmptyState>当前筛选条件下暂无排期数据</EmptyState>
           ) : (
-            <table className="w-full min-w-[7000px] table-fixed border-collapse text-xs">
+            <table className="w-full min-w-[5200px] table-fixed border-collapse text-xs sm:min-w-[7000px]">
               <thead>
                 <tr>
                   <th
                     rowSpan={2}
-                    className="sticky left-0 z-30 border-b border-slate-100 bg-white px-4 py-3 text-left font-semibold text-slate-500"
-                    style={{ width: STICKY_COLUMN_WIDTH }}
+                    className="sticky left-0 z-40 border-b border-slate-100 bg-white/96 px-4 py-3 text-center font-semibold text-slate-500 backdrop-blur-xl"
+                    style={{ width: STICKY_COLUMN_WIDTH, minWidth: STICKY_COLUMN_WIDTH, boxShadow: '12px 0 24px -18px rgba(15, 23, 42, 0.10)' }}
                   >
-                    设备
+                    <span className="flex items-center justify-center">设备</span>
                   </th>
                   {monthGroups.map((group) => {
                     const containsToday = days
@@ -505,8 +497,8 @@ export default function GanttChart({ equipment }: GanttChartProps) {
                         key={`${group.label}-${group.startIndex}`}
                         colSpan={group.span}
                         className={cn(
-                          'border-b border-slate-100 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400',
-                          containsToday && 'bg-blue-50/60 text-blue-700'
+                          'border-b border-slate-100 px-3 py-2 text-left text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400',
+                          containsToday && 'bg-sky-50/65 text-sky-700'
                         )}
                       >
                         {group.label}
@@ -527,19 +519,19 @@ export default function GanttChart({ equipment }: GanttChartProps) {
                         className={cn(
                           'relative border-b border-slate-100 px-1 py-3 text-center font-medium',
                           holiday
-                            ? 'bg-red-50/80 text-red-500'
+                            ? 'bg-rose-50/70 text-rose-500'
                             : weekend
-                              ? 'bg-slate-50 text-slate-600'
+                              ? 'bg-slate-50/70 text-slate-600'
                               : 'text-slate-400',
-                          todayColumn && 'z-10 bg-blue-50/80'
+                          todayColumn && 'z-10 bg-sky-50/70'
                         )}
                         style={{ width: DAY_COLUMN_WIDTH }}
                       >
-                        {todayColumn ? <span className="pointer-events-none absolute inset-y-0 left-0 w-px bg-blue-400/70" /> : null}
+                        {todayColumn ? <span className="pointer-events-none absolute inset-y-0 left-0 w-px bg-sky-300/80" /> : null}
                         <div
                           className={cn(
                             'mx-auto flex w-fit items-center gap-1 rounded-md px-2 py-1',
-                            todayColumn && 'bg-blue-100 font-bold text-blue-700 ring-1 ring-blue-200'
+                            todayColumn && 'bg-white/88 font-semibold text-sky-700 ring-1 ring-sky-100'
                           )}
                         >
                           <span>{formatDayLabel(date)}</span>
@@ -553,24 +545,22 @@ export default function GanttChart({ equipment }: GanttChartProps) {
               <tbody>
                 {filteredEquipment.map((item, rowIndex) => {
                   const equipmentStatus = getEquipmentStatusBadge(item.status);
+                  const equipmentStatusDotTone = getEquipmentStatusDotTone(item.orders, item.status);
                   const EquipmentStatusIcon = equipmentStatus.icon;
 
                   return (
                     <tr key={item.id}>
                       <td
-                        className="sticky left-0 z-20 border-b border-slate-100 bg-white px-4 py-4 font-medium text-slate-900"
-                        style={{ width: STICKY_COLUMN_WIDTH }}
+                        className="sticky left-0 z-30 border-b border-slate-100 bg-white/94 px-2 py-2.5 font-medium text-slate-800 backdrop-blur-xl"
+                        style={{ width: STICKY_COLUMN_WIDTH, minWidth: STICKY_COLUMN_WIDTH, boxShadow: '10px 0 20px -18px rgba(15, 23, 42, 0.08)' }}
                       >
-                        <div className="space-y-1.5">
-                          <p>{item.name}</p>
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium', equipmentStatus.tone === 'emerald' ? 'bg-emerald-50 text-emerald-700' : equipmentStatus.tone === 'amber' ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700')}>
-                              <EquipmentStatusIcon className="h-3 w-3" />
-                              {equipmentStatus.label}
-                            </span>
-                            {item.category ? <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">{item.category}</span> : null}
-                            <p className="text-[11px] text-slate-400">{item.orders.length} 条排期</p>
-                          </div>
+                        <div className="flex items-center gap-1.5">
+                          <p className="min-w-0 truncate text-[12px] font-semibold tracking-[-0.01em] text-slate-600">{item.name}</p>
+                          <span
+                            className={cn('inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full shadow-[0_1px_2px_rgba(15,23,42,0.08)]', equipmentStatusDotTone)}
+                          >
+                            <EquipmentStatusIcon className="h-2.5 w-2.5" />
+                          </span>
                         </div>
                       </td>
                       {days.map((date, index) => {
@@ -591,7 +581,7 @@ export default function GanttChart({ equipment }: GanttChartProps) {
                               className={cn('relative h-16 border-b border-slate-100', getColumnTone({ holiday, weekend, todayColumn }))}
                               style={{ width: DAY_COLUMN_WIDTH }}
                             >
-                              {todayColumn ? <span className="pointer-events-none absolute inset-y-0 left-0 z-0 w-px bg-blue-400/70" /> : null}
+                              {todayColumn ? <span className="pointer-events-none absolute inset-y-0 left-0 z-0 w-px bg-sky-300/80" /> : null}
                             </td>
                           );
                         }
@@ -610,7 +600,7 @@ export default function GanttChart({ equipment }: GanttChartProps) {
                             className={cn('relative h-16 border-b border-slate-100 p-0', getColumnTone({ holiday, weekend, todayColumn }))}
                             style={{ width: DAY_COLUMN_WIDTH }}
                           >
-                            {todayColumn ? <span className="pointer-events-none absolute inset-y-0 left-0 z-0 w-px bg-blue-400/70" /> : null}
+                            {todayColumn ? <span className="pointer-events-none absolute inset-y-0 left-0 z-0 w-px bg-sky-300/80" /> : null}
                             <div
                               className={cn(
                                 'absolute inset-y-2 left-0 z-10 overflow-visible transition-transform duration-150',
@@ -638,30 +628,30 @@ export default function GanttChart({ equipment }: GanttChartProps) {
                               >
                                 <div
                                   className={cn(
-                                    'flex h-full items-center justify-between gap-2 overflow-hidden rounded-xl px-2.5 py-1.5 text-white shadow-sm transition-all duration-150',
+                                    'flex h-full items-center justify-between gap-2 overflow-hidden rounded-xl px-2.5 py-1.5 shadow-[0_10px_24px_rgba(255,255,255,0.22)] transition-all duration-150',
                                     pill.bar,
-                                    isHovered && 'shadow-lg ring-2 ring-white/60'
+                                    isHovered && 'ring-2 ring-white/65'
                                   )}
                                 >
                                   <div className="min-w-0">
                                     <p className="truncate text-[11px] font-semibold leading-4">{order.customer_name ?? '订单'}</p>
-                                    <p className="truncate text-[10px] text-white/85">{pill.label}</p>
+                                    <p className="truncate text-[10px] text-slate-700/70">{pill.label}</p>
                                   </div>
-                                  {clampedSpan >= 2 ? <span className="shrink-0 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-medium">{rawSpan} 天</span> : null}
+                                  {clampedSpan >= 2 ? <span className="shrink-0 rounded-full bg-white/45 px-2 py-0.5 text-[10px] font-medium text-slate-700">{rawSpan} 天</span> : null}
                                 </div>
                               </button>
 
                               {isHovered ? (
                                 <div
                                   className={cn(
-                                    'absolute z-30 w-64 rounded-2xl border border-slate-200 bg-white p-4 text-left text-slate-700 shadow-2xl',
+                                    'absolute z-30 w-56 rounded-[22px] border border-white/75 bg-white/92 p-4 text-left text-slate-700 shadow-[0_18px_44px_rgba(15,23,42,0.08)] backdrop-blur-xl sm:w-64',
                                     tooltipPlacement.horizontal === 'right' ? 'right-0' : 'left-0',
                                     tooltipPlacement.vertical === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'
                                   )}
                                 >
                                   <div className="flex items-center justify-between gap-3">
                                     <p className="text-sm font-semibold text-slate-900">{order.customer_name ?? '未命名客户'}</p>
-                                    <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-semibold', pill.accent)}>{pill.label}</span>
+                                    <span className={cn('rounded-full px-2.5 py-1 text-[10px] font-semibold', pill.accent)}>{pill.label}</span>
                                   </div>
                                   <div className="mt-3 space-y-2 text-xs">
                                     <div className="flex items-start justify-between gap-3">
@@ -709,7 +699,7 @@ export default function GanttChart({ equipment }: GanttChartProps) {
         footer={
           <div className="space-y-3">
             {(actionError || copyMessage) ? (
-              <p className={cn('text-sm', actionError ? 'text-red-500' : 'text-emerald-600')}>
+              <p className={cn('text-sm', actionError ? 'text-rose-500' : 'text-emerald-600')}>
                 {actionError || copyMessage}
               </p>
             ) : null}
@@ -761,13 +751,13 @@ export default function GanttChart({ equipment }: GanttChartProps) {
           <div className="space-y-6">
             <div className="flex flex-wrap items-center gap-3">
               {currentStatus ? <StatBadge tone={currentStatus.tone}>{currentStatus.label}</StatBadge> : null}
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-500">订单号：{selectedOrder.order.id}</span>
-              {selectedOrder.category ? <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-500">分类：{selectedOrder.category}</span> : null}
+              <StatBadge tone="slate">订单号：{selectedOrder.order.id}</StatBadge>
+              {selectedOrder.category ? <StatBadge tone="slate">分类：{selectedOrder.category}</StatBadge> : null}
             </div>
 
             {nextStatusAction?.requireTracking ? (
-              <div className="space-y-3 rounded-2xl border border-blue-100 bg-blue-50/70 p-4">
-                <div className="flex items-center gap-2 text-blue-700">
+              <div className="space-y-3 rounded-[24px] border border-sky-200/70 bg-sky-50/72 p-4">
+                <div className="flex items-center gap-2 text-sky-700">
                   <Truck className="h-4 w-4" />
                   <p className="text-sm font-semibold">发货前请录入运单号</p>
                 </div>
@@ -779,7 +769,7 @@ export default function GanttChart({ equipment }: GanttChartProps) {
                   }}
                   placeholder="请输入顺丰 / 京东 / 菜鸟等运单号"
                 />
-                <label className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
+                <label className="flex items-start gap-3 rounded-[20px] border border-amber-200/75 bg-white/80 px-3 py-3 text-sm text-amber-800 backdrop-blur-sm">
                   <input
                     type="checkbox"
                     checked={confirmShip}
@@ -804,8 +794,8 @@ export default function GanttChart({ equipment }: GanttChartProps) {
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-2xl border border-slate-100 bg-white p-5">
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">物流信息</p>
+              <InfoTile className="p-5">
+                <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">物流信息</p>
                 <div className="mt-4 space-y-3 text-sm text-slate-600">
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-slate-400">运单号</span>
@@ -816,10 +806,10 @@ export default function GanttChart({ equipment }: GanttChartProps) {
                     <span className="font-medium text-slate-700">{selectedOrder.order.deposit_exemption || '—'}</span>
                   </div>
                 </div>
-              </div>
+              </InfoTile>
 
-              <div className="rounded-2xl border border-slate-100 bg-white p-5">
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">费用信息</p>
+              <InfoTile className="p-5">
+                <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">费用信息</p>
                 <div className="mt-4 space-y-3 text-sm text-slate-600">
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-slate-400">订单金额</span>
@@ -830,7 +820,7 @@ export default function GanttChart({ equipment }: GanttChartProps) {
                     <span className="font-medium text-slate-700">¥{Number(selectedOrder.order.deposit_paid || 0).toFixed(2)}</span>
                   </div>
                 </div>
-              </div>
+              </InfoTile>
             </div>
           </div>
         ) : null}

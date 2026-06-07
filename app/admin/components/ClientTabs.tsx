@@ -25,9 +25,9 @@ const tabs: TabItem[] = [
 ];
 
 const badgeClassNames = {
-  red: 'bg-red-500 text-white',
-  amber: 'bg-amber-500 text-white',
-  blue: 'bg-blue-500 text-white',
+  red: 'border border-rose-200/75 bg-rose-50/75 text-rose-700',
+  amber: 'border border-amber-200/75 bg-amber-50/75 text-amber-700',
+  blue: 'border border-sky-200/75 bg-sky-50/75 text-sky-700',
 } as const;
 
 export default function ClientTabs({ dispatchCount, pendingCount, activeCount }: ClientTabsProps) {
@@ -39,7 +39,7 @@ export default function ClientTabs({ dispatchCount, pendingCount, activeCount }:
   } as const;
 
   return (
-    <div className="flex flex-wrap items-center gap-6">
+    <div className="flex flex-wrap items-center gap-3 rounded-[26px] border border-white/70 bg-white/76 px-3 py-2.5 shadow-[0_14px_36px_rgba(15,23,42,0.045)] backdrop-blur-xl">
       {tabs.map((tab) => {
         const isActive = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
         const count = counts[tab.href as keyof typeof counts];
@@ -49,10 +49,10 @@ export default function ClientTabs({ dispatchCount, pendingCount, activeCount }:
             key={tab.href}
             href={tab.href}
             className={cn(
-              'inline-flex items-center gap-2 border-b-2 px-1 pb-3 text-sm font-medium transition-colors',
+              'inline-flex items-center gap-2 rounded-full px-3.5 py-2 text-sm font-medium transition-all',
               isActive
-                ? 'border-indigo-600 text-indigo-600'
-                : 'border-transparent text-slate-600 hover:text-slate-900'
+                ? 'bg-slate-900 text-white shadow-[0_10px_22px_rgba(15,23,42,0.12)]'
+                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
             )}
           >
             <span>{tab.label}</span>
@@ -60,7 +60,7 @@ export default function ClientTabs({ dispatchCount, pendingCount, activeCount }:
               <span
                 className={cn(
                   'rounded-full px-2 py-0.5 text-xs font-semibold leading-5',
-                  tab.badgeTone ? badgeClassNames[tab.badgeTone] : ''
+                  isActive ? 'bg-white/18 text-white' : tab.badgeTone ? badgeClassNames[tab.badgeTone] : 'border border-slate-200/75 bg-white/70 text-slate-600'
                 )}
               >
                 {count}

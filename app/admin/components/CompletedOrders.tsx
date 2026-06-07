@@ -59,7 +59,7 @@ export default function CompletedOrders({ orders }: CompletedOrdersProps) {
         {displayOrders.length === 0 ? (
           <EmptyState>暂无已完成订单</EmptyState>
         ) : (
-          <table className="w-full min-w-[1140px] text-sm">
+          <table className="w-full min-w-[940px] text-sm">
             <TableHead>
               <tr>
                 <Th>设备</Th>
@@ -91,7 +91,7 @@ export default function CompletedOrders({ orders }: CompletedOrdersProps) {
                   </Td>
                   <Td>
                     <div className="space-y-1">
-                      <p className="max-w-[200px] truncate text-sm text-slate-700" title={order.shipping_address || '—'}>
+                      <p className="max-w-[140px] truncate text-sm text-slate-700 sm:max-w-[200px]" title={order.shipping_address || '—'}>
                         {order.shipping_address || '—'}
                       </p>
                       <p className="text-xs text-slate-400">{order.shipping_method || '待确认发货方式'}</p>

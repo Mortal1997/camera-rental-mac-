@@ -5,7 +5,7 @@ import { bulkCreateOrders, createManualOrder, deleteOrder, updateOrderStatus } f
 import type { Equipment, Order } from '../../actions/types';
 import { read, utils, writeFileXLSX } from 'xlsx';
 import { Download, FileSpreadsheet, Package, Plus, Trash2, Truck, Upload } from 'lucide-react';
-import { EmptyState, FormField, Modal, PrimaryButton, SecondaryButton, SectionHeader, SelectInput, SurfaceCard, TableHead, TableShell, Td, TextInput, Th, Tr } from './ui';
+import { DangerButton, EmptyState, FormField, Modal, PrimaryButton, SecondaryButton, SectionHeader, SelectInput, StatBadge, SurfaceCard, TableHead, TableShell, Td, TextInput, Th, Tr } from './ui';
 
 interface PendingOrdersProps {
   orders: Order[];
@@ -13,7 +13,6 @@ interface PendingOrdersProps {
 }
 
 const depositOptions = ['芝麻信用', '押金双免', '支付押金', '熟人免押'];
-const dangerButtonClassName = 'inline-flex items-center justify-center gap-2 rounded-md bg-red-50 px-3 py-1.5 text-sm text-red-600 transition-colors hover:bg-red-100 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-50';
 const orderTemplateRows = [
   {
     客户姓名: '张三',
@@ -306,8 +305,8 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
           title="待发货订单"
           description="录入物流单号后即可发货。"
           meta={
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-slate-400">{displayOrders.length} 单</span>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <StatBadge tone="slate">{displayOrders.length} 单</StatBadge>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -329,18 +328,18 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
         />
 
         {formError ? (
-          <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">{formError}</div>
+          <div className="mt-5 rounded-[20px] border border-rose-200/80 bg-rose-50/80 px-4 py-3 text-sm text-rose-600">{formError}</div>
         ) : null}
 
         {importError && !isImportPreviewOpen ? (
-          <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">{importError}</div>
+          <div className="mt-5 rounded-[20px] border border-rose-200/80 bg-rose-50/80 px-4 py-3 text-sm text-rose-600">{importError}</div>
         ) : null}
 
         <TableShell>
           {displayOrders.length === 0 ? (
             <EmptyState>暂无待发货订单</EmptyState>
           ) : (
-            <table className="w-full min-w-[1160px] text-sm">
+            <table className="w-full min-w-[980px] text-sm">
               <TableHead>
                 <tr>
                   <Th>设备</Th>
@@ -358,9 +357,7 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
                     <Td className="font-medium text-slate-900">{order.equipment?.name ?? '—'}</Td>
                     <Td>
                       <div className="space-y-1">
-                        <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
-                          {order.platform_source || '手动录单'}
-                        </span>
+                        <StatBadge tone="slate">{order.platform_source || '手动录单'}</StatBadge>
                         <p className="text-xs text-slate-400">{order.external_order_id || `内部单号：${order.id}`}</p>
                       </div>
                     </Td>
@@ -372,14 +369,14 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
                     </Td>
                     <Td>
                       <div className="space-y-1">
-                        <p className="max-w-[200px] truncate text-sm text-slate-700" title={order.shipping_address || '—'}>
+                        <p className="max-w-[140px] truncate text-sm text-slate-700 sm:max-w-[200px]" title={order.shipping_address || '—'}>
                           {order.shipping_address || '—'}
                         </p>
                         <p className="text-xs text-slate-400">{order.shipping_method || '待确认发货方式'}</p>
                       </div>
                     </Td>
                     <Td className="text-slate-600">{formatDateRange(order.start_date, order.end_date)}</Td>
-                    <Td className="font-semibold text-emerald-600">{formatCurrency(order.total_price)}</Td>
+                    <Td className="font-semibold text-slate-900">{formatCurrency(order.total_price)}</Td>
                     <Td>
                       <div className="flex flex-col gap-2">
                         <TextInput
@@ -393,14 +390,9 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
                           <PrimaryButton onClick={() => handleShip(order.id)} disabled={isPending} className="text-xs">
                             <Truck className="h-3.5 w-3.5" />发货
                           </PrimaryButton>
-                          <button
-                            type="button"
-                            className={dangerButtonClassName}
-                            onClick={() => handleDelete(order.id)}
-                            disabled={isPending}
-                          >
+                          <DangerButton onClick={() => handleDelete(order.id)} disabled={isPending}>
                             <Trash2 className="h-4 w-4" />删除
-                          </button>
+                          </DangerButton>
                         </div>
                       </div>
                     </Td>
@@ -422,7 +414,7 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
         footer={
           <div className="flex flex-wrap justify-end gap-3">
             {formError && (
-              <div className="w-full rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">{formError}</div>
+              <div className="w-full rounded-[20px] border border-rose-200/80 bg-rose-50/80 px-4 py-3 text-sm text-rose-600">{formError}</div>
             )}
             <SecondaryButton onClick={closeModal} disabled={isPending}>取消</SecondaryButton>
             <PrimaryButton onClick={handleCreateOrder} disabled={isPending || equipmentList.length === 0}>{isPending ? '创建中...' : '确认创建'}</PrimaryButton>
@@ -477,7 +469,7 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
           <FormField label="收货地址" className="md:col-span-2">
             <TextInput
               type="text"
-              placeholder="北京市朝阳区xxx"
+              placeholder="请输入完整收货地址"
               value={formValues.shipping_address}
               onChange={(e) => setFormValues((p) => ({ ...p, shipping_address: e.target.value }))}
             />
@@ -499,7 +491,7 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
             />
           </FormField>
 
-          <FormField label="订单金额" className="md:col-span-2">
+          <FormField label="订单金额 (元)">
             <TextInput
               type="number"
               min="0"
@@ -522,7 +514,7 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
         footer={
           <div className="flex flex-wrap justify-end gap-3">
             {importError ? (
-              <div className="w-full rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">{importError}</div>
+              <div className="w-full rounded-[20px] border border-rose-200/80 bg-rose-50/80 px-4 py-3 text-sm text-rose-600">{importError}</div>
             ) : null}
             <SecondaryButton onClick={closeImportPreview} disabled={isPending}>取消</SecondaryButton>
             <PrimaryButton onClick={handleBulkImport} disabled={isPending || validImportRecords.length === 0}>
@@ -532,66 +524,63 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
         }
       >
         <div className="grid gap-4 md:grid-cols-3">
-          <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
+          <div className="rounded-[22px] border border-slate-200/70 bg-white/76 p-4">
             <p className="text-sm text-slate-500">总记录</p>
             <p className="mt-2 text-2xl font-semibold text-slate-900">{importPreviewRecords.length}</p>
           </div>
-          <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
+          <div className="rounded-[22px] border border-emerald-200/70 bg-emerald-50/72 p-4">
             <p className="text-sm text-emerald-700">有效记录</p>
-            <p className="mt-2 text-2xl font-semibold text-emerald-700">{validImportRecords.length}</p>
+            <p className="mt-2 text-2xl font-semibold text-slate-900">{validImportRecords.length}</p>
           </div>
-          <div className="rounded-2xl border border-amber-100 bg-amber-50/70 p-4">
+          <div className="rounded-[22px] border border-amber-200/70 bg-amber-50/72 p-4">
             <p className="text-sm text-amber-700">无效记录</p>
-            <p className="mt-2 text-2xl font-semibold text-amber-700">{invalidImportRecords.length}</p>
+            <p className="mt-2 text-2xl font-semibold text-slate-900">{invalidImportRecords.length}</p>
           </div>
         </div>
 
         {invalidImportRecords.length > 0 ? (
-          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          <div className="mt-4 rounded-[20px] border border-amber-200/80 bg-amber-50/80 px-4 py-3 text-sm text-amber-700">
             检测到 {invalidImportRecords.length} 条无效数据，提交时将自动跳过，仅导入有效行。
           </div>
         ) : null}
 
-        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {importPreviewRecords.map((record, index) => (
-            <div
-              key={`${record.rowNumber}-${record.customer_name}-${record.external_order_id}-${index}`}
-              className={`rounded-2xl border p-4 shadow-sm ${
-                record.issues.length > 0 ? 'border-amber-200 bg-amber-50/60' : 'border-slate-100 bg-white'
-              }`}
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
-                  第 {record.rowNumber} 行
-                </span>
-                <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
-                  {record.platform_source || '未填写平台'}
-                </span>
-                <span className="text-xs text-slate-400">{record.external_order_id || '未填写外部单号'}</span>
-              </div>
-              <div className="mt-4 space-y-2 text-sm text-slate-600">
-                <p><span className="font-medium text-slate-900">客户：</span>{record.customer_name || '—'}</p>
-                <p><span className="font-medium text-slate-900">电话：</span>{record.customer_phone || '—'}</p>
-                <p className="line-clamp-2"><span className="font-medium text-slate-900">地址：</span>{record.shipping_address || '—'}</p>
-                <p><span className="font-medium text-slate-900">金额：</span><span className="font-semibold text-emerald-600">{formatCurrency(record.total_price)}</span></p>
-                <p><span className="font-medium text-slate-900">租期：</span>{formatDateRange(record.start_date, record.end_date)}</p>
-                <p><span className="font-medium text-slate-900">免押：</span>{record.deposit_exemption || '—'}</p>
-                <p><span className="font-medium text-slate-900">发货：</span>{record.shipping_method || '—'}</p>
-              </div>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {record.issues.length === 0 ? (
-                  <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">可导入</span>
-                ) : (
-                  record.issues.map((issue) => (
-                    <span key={issue} className="inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700">
-                      {issue}
-                    </span>
-                  ))
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
+        <TableShell>
+          <table className="w-full min-w-[980px] text-sm">
+            <TableHead>
+              <tr>
+                <Th>Excel 行</Th>
+                <Th>客户姓名</Th>
+                <Th>联系电话</Th>
+                <Th>收货地址</Th>
+                <Th>租期</Th>
+                <Th>金额</Th>
+                <Th>校验结果</Th>
+              </tr>
+            </TableHead>
+            <tbody>
+              {importPreviewRecords.map((record) => (
+                <Tr key={`${record.rowNumber}-${record.customer_name}-${record.customer_phone}`} className={record.issues.length > 0 ? 'bg-amber-50/38 hover:!bg-amber-50/55' : ''}>
+                  <Td>第 {record.rowNumber} 行</Td>
+                  <Td className="font-medium text-slate-900">{record.customer_name || '—'}</Td>
+                  <Td>{record.customer_phone || '—'}</Td>
+                  <Td className="max-w-[240px] truncate" title={record.shipping_address || '—'}>{record.shipping_address || '—'}</Td>
+                  <Td>{formatDateRange(record.start_date, record.end_date)}</Td>
+                  <Td className="font-semibold text-slate-900">{formatCurrency(record.total_price)}</Td>
+                  <Td>
+                    {record.issues.length === 0 ? (
+                      <StatBadge tone="emerald">可导入</StatBadge>
+                    ) : (
+                      <div className="space-y-1">
+                        <StatBadge tone="amber">需修正</StatBadge>
+                        <p className="text-xs text-amber-700">{record.issues.join('；')}</p>
+                      </div>
+                    )}
+                  </Td>
+                </Tr>
+              ))}
+            </tbody>
+          </table>
+        </TableShell>
       </Modal>
     </>
   );
