@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clipboard,
+  Edit2,
   Loader2,
   MapPin,
   Package2,
@@ -15,15 +16,22 @@ import {
   Send,
   Truck,
   UserRound,
+  X,
   Wrench,
 } from 'lucide-react';
+import { format } from 'date-fns';
+import { zhCN } from 'date-fns/locale';
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
-import { updateOrderStatus } from '../../actions/admin-actions';
-import type { EquipmentWithOrders, Order } from '../../actions/types';
+import { type DateRange } from 'react-day-picker';
+import { updateOrderFields, updateOrderStatus } from '../../actions/admin-actions';
+import type { Equipment, EquipmentWithOrders, Order, Order as OrderType } from '../../actions/types';
 import { EmptyState, FilterPanel, InfoTile, Modal, PrimaryButton, SecondaryButton, SelectInput, SectionHeader, StatBadge, SurfaceCard, TextInput, cn } from './ui';
+import { Button } from '@/components/ui/button';
+import { DateRangePicker } from '@/components/ui/date-range-picker';
 
 interface GanttChartProps {
   equipment: EquipmentWithOrders[];
+  equipmentList: Equipment[];
 }
 
 type SelectedOrderState = {
@@ -59,7 +67,7 @@ const HOLIDAYS_2026 = [
   '2026-10-07',
 ];
 
-const STICKY_COLUMN_WIDTH = 132;
+const STICKY_COLUMN_WIDTH = 220;
 const DAY_COLUMN_WIDTH = 70;
 const PAST_DAYS = 30;
 const FUTURE_DAYS = 60;
@@ -69,58 +77,43 @@ function getStatusPill(status: string) {
   if (status === 'pending_payment' || status === 'confirmed') {
     return {
       label: '待发货',
-      bar: 'bg-sky-400/85 ring-1 ring-white/70 text-slate-900',
+      bar: 'bg-indigo-100 text-indigo-700',
       tone: 'blue' as const,
-      accent: 'bg-sky-50/90 text-sky-700 border border-sky-200/70',
+      accent: 'bg-indigo-50 text-indigo-700',
     };
   }
   if (status === 'using') {
     return {
       label: '租用中',
-      bar: 'bg-amber-400/85 ring-1 ring-white/70 text-slate-900',
+      bar: 'bg-amber-100 text-amber-700',
       tone: 'amber' as const,
-      accent: 'bg-amber-50/90 text-amber-700 border border-amber-200/70',
+      accent: 'bg-amber-50 text-amber-700',
     };
   }
   if (status === 'returned') {
     return {
       label: '已完成',
-      bar: 'bg-emerald-400/85 ring-1 ring-white/70 text-slate-900',
+      bar: 'bg-emerald-100 text-emerald-700',
       tone: 'emerald' as const,
-      accent: 'bg-emerald-50/90 text-emerald-700 border border-emerald-200/70',
+      accent: 'bg-emerald-50 text-emerald-700',
     };
   }
   return {
     label: status,
-    bar: 'bg-slate-300/92 ring-1 ring-white/70 text-slate-900',
+    bar: 'bg-slate-100 text-slate-700',
     tone: 'slate' as const,
-    accent: 'bg-slate-50/90 text-slate-700 border border-slate-200/70',
+    accent: 'bg-slate-100 text-slate-600',
   };
 }
 
 function getEquipmentStatusBadge(status: EquipmentWithOrders['status']) {
-  if (status === 'available') {
-    return { icon: CheckCircle2 };
-  }
-  if (status === 'rented') {
-    return { icon: Package2 };
-  }
+  if (status === 'available') return { icon: CheckCircle2 };
+  if (status === 'rented') return { icon: Package2 };
   return { icon: Wrench };
 }
 
-function getEquipmentStatusDotTone(orders: Order[], fallbackStatus: EquipmentWithOrders['status']) {
-  const activeOrder = orders.find((order) => order.status === 'using') ?? orders.find((order) => order.status === 'pending_payment' || order.status === 'confirmed') ?? orders.find((order) => order.status === 'returned');
-
-  if (activeOrder) {
-    const pill = getStatusPill(activeOrder.status);
-    if (pill.tone === 'blue') return 'bg-sky-400 text-white';
-    if (pill.tone === 'amber') return 'bg-amber-400 text-white';
-    if (pill.tone === 'emerald') return 'bg-emerald-400 text-white';
-  }
-
-  if (fallbackStatus === 'available') return 'bg-sky-400 text-white';
-  if (fallbackStatus === 'rented') return 'bg-amber-400 text-white';
-  return 'bg-emerald-400 text-white';
+function getEquipmentStatusDotTone() {
+  return 'bg-indigo-600 text-white';
 }
 
 function formatDayLabel(date: Date) {
@@ -162,9 +155,9 @@ function isSameDay(left: Date, right: Date) {
 }
 
 function getColumnTone({ holiday, weekend, todayColumn }: { holiday: boolean; weekend: boolean; todayColumn: boolean }) {
-  if (todayColumn) return 'bg-sky-50/70';
-  if (holiday) return 'bg-rose-50/65';
-  if (weekend) return 'bg-slate-50/70';
+  if (todayColumn) return 'bg-indigo-50/80';
+  if (holiday) return 'bg-rose-50/60';
+  if (weekend) return 'bg-slate-50';
   return '';
 }
 
@@ -181,25 +174,11 @@ function getTooltipPlacement(index: number, span: number, totalDays: number, row
 
 function getNextStatusAction(order: Order) {
   if (order.status === 'pending_payment' || order.status === 'confirmed') {
-    return {
-      label: '标记发货',
-      nextStatus: 'using',
-      icon: Send,
-      tone: 'primary' as const,
-      requireTracking: true,
-    };
+    return { label: '标记发货', nextStatus: 'using', icon: Send, tone: 'primary' as const, requireTracking: true };
   }
-
   if (order.status === 'using') {
-    return {
-      label: '标记归还',
-      nextStatus: 'returned',
-      icon: CheckCircle2,
-      tone: 'secondary' as const,
-      requireTracking: false,
-    };
+    return { label: '标记归还', nextStatus: 'returned', icon: CheckCircle2, tone: 'secondary' as const, requireTracking: false };
   }
-
   return null;
 }
 
@@ -215,32 +194,29 @@ function buildOrderSummary(selectedOrder: SelectedOrderState) {
   ].join('\n');
 }
 
-function InfoCard({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: typeof CalendarRange;
-  label: string;
-  value: string;
-}) {
+function InfoCard({ icon: Icon, label, value }: { icon: typeof CalendarRange; label: string; value: string }) {
   return (
     <InfoTile className="p-4">
-      <div className="flex items-center gap-2 text-slate-400">
-        <Icon className="h-4 w-4" />
+      <div className="flex items-center gap-2 text-slate-500">
+        <Icon className="h-4 w-4 text-indigo-600" />
         <span className="text-[11px] font-medium uppercase tracking-[0.14em]">{label}</span>
       </div>
-      <p className="mt-3 text-sm font-medium text-slate-700">{value}</p>
+      <p className="mt-3 text-sm font-medium text-slate-900">{value}</p>
     </InfoTile>
   );
 }
 
-export default function GanttChart({ equipment }: GanttChartProps) {
+export default function GanttChart({ equipment, equipmentList }: GanttChartProps) {
   const today = useMemo(() => getStartOfDay(new Date()), []);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [hoveredOrderId, setHoveredOrderId] = useState<string | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<SelectedOrderState | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editDateRange, setEditDateRange] = useState<DateRange | undefined>();
+  const [editForm, setEditForm] = useState({ customer_name: '', customer_phone: '', shipping_address: '', start_date: '', end_date: '', equipment_id: '', notes: '' });
+  const [sfLoading, setSfLoading] = useState(false);
+  const [sfError, setSfError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
@@ -251,56 +227,36 @@ export default function GanttChart({ equipment }: GanttChartProps) {
   const [isPending, startTransition] = useTransition();
   const dragStateRef = useRef({ isDown: false, startX: 0, scrollLeft: 0 });
 
-  const days = useMemo(() => {
-    return Array.from({ length: PAST_DAYS + FUTURE_DAYS }, (_, index) => {
-      const date = new Date(today);
-      date.setDate(date.getDate() + index - PAST_DAYS);
-      return date;
-    });
-  }, [today]);
+  const days = useMemo(() => Array.from({ length: PAST_DAYS + FUTURE_DAYS }, (_, index) => {
+    const date = new Date(today);
+    date.setDate(date.getDate() + index - PAST_DAYS);
+    return date;
+  }), [today]);
 
   const monthGroups = useMemo(() => {
     const groups: Array<{ label: string; startIndex: number; span: number }> = [];
-
     days.forEach((date, index) => {
       const label = formatMonthLabel(date);
       const last = groups[groups.length - 1];
-      if (!last || last.label !== label) {
-        groups.push({ label, startIndex: index, span: 1 });
-      } else {
-        last.span += 1;
-      }
+      if (!last || last.label !== label) groups.push({ label, startIndex: index, span: 1 });
+      else last.span += 1;
     });
-
     return groups;
   }, [days]);
 
-  const categories = useMemo(
-    () => Array.from(new Set(equipment.map((item) => item.category).filter(Boolean))) as string[],
-    [equipment]
-  );
+  const categories = useMemo(() => Array.from(new Set(equipment.map((item) => item.category).filter(Boolean))) as string[], [equipment]);
 
   const filteredEquipment = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
     return equipment.filter((item) => {
-      const matchesSearch =
-        !term ||
-        item.name.toLowerCase().includes(term) ||
-        (item.serial_number ?? '').toLowerCase().includes(term) ||
-        item.orders.some((order) => (order.customer_name ?? '').toLowerCase().includes(term));
-
+      const matchesSearch = !term || item.name.toLowerCase().includes(term) || (item.serial_number ?? '').toLowerCase().includes(term) || item.orders.some((order) => (order.customer_name ?? '').toLowerCase().includes(term));
       const matchesCategory = categoryFilter === 'all' || item.category === categoryFilter;
       const matchesStatus = matchesStatusFilter(item.orders, statusFilter);
-
       return matchesSearch && matchesCategory && matchesStatus;
     });
   }, [equipment, searchTerm, categoryFilter, statusFilter]);
 
-  const totalOrders = useMemo(
-    () => filteredEquipment.reduce((sum, item) => sum + item.orders.length, 0),
-    [filteredEquipment]
-  );
-
+  const totalOrders = useMemo(() => filteredEquipment.reduce((sum, item) => sum + item.orders.length, 0), [filteredEquipment]);
   const currentStatus = selectedOrder ? getStatusPill(selectedOrder.order.status) : null;
   const nextStatusAction = selectedOrder ? getNextStatusAction(selectedOrder.order) : null;
 
@@ -316,34 +272,24 @@ export default function GanttChart({ equipment }: GanttChartProps) {
 
   const handleMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
     if ((event.target as HTMLElement).closest('button, input, select, textarea, a')) return;
-    dragStateRef.current = {
-      isDown: true,
-      startX: event.pageX,
-      scrollLeft: scrollRef.current?.scrollLeft ?? 0,
-    };
+    dragStateRef.current = { isDown: true, startX: event.pageX, scrollLeft: scrollRef.current?.scrollLeft ?? 0 };
     setIsDragging(true);
   };
 
   const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
     if (!dragStateRef.current.isDown || !scrollRef.current) return;
-    const delta = event.pageX - dragStateRef.current.startX;
-    scrollRef.current.scrollLeft = dragStateRef.current.scrollLeft - delta;
+    const diff = event.pageX - dragStateRef.current.startX;
+    scrollRef.current.scrollLeft = dragStateRef.current.scrollLeft - diff;
   };
 
-  const scrollToDayIndex = (dayIndex: number) => {
+  const scrollToDayIndex = (index: number) => {
     if (!scrollRef.current) return;
-    scrollRef.current.scrollTo({
-      left: dayIndex * DAY_COLUMN_WIDTH,
-      behavior: 'smooth',
-    });
+    scrollRef.current.scrollTo({ left: index * DAY_COLUMN_WIDTH, behavior: 'smooth' });
   };
 
   const scrollByDays = (direction: number) => {
     if (!scrollRef.current) return;
-    scrollRef.current.scrollBy({
-      left: direction * SCROLL_STEP_DAYS * DAY_COLUMN_WIDTH,
-      behavior: 'smooth',
-    });
+    scrollRef.current.scrollBy({ left: direction * SCROLL_STEP_DAYS * DAY_COLUMN_WIDTH, behavior: 'smooth' });
   };
 
   const resetFilters = () => {
@@ -352,56 +298,148 @@ export default function GanttChart({ equipment }: GanttChartProps) {
     setCategoryFilter('all');
   };
 
-  const handleCopy = async (text: string, message: string) => {
-    if (!text) return;
+  const handleCopy = async (value: string, successText: string) => {
+    if (!value) return;
     try {
-      await navigator.clipboard.writeText(text);
-      setCopyMessage(message);
+      await navigator.clipboard.writeText(value);
+      setCopyMessage(successText);
       setActionError(null);
     } catch {
-      setActionError('复制失败，请手动复制');
+      setActionError('复制失败，请稍后重试');
     }
   };
 
   const handleStatusAction = () => {
     if (!selectedOrder || !nextStatusAction) return;
+    if (nextStatusAction.requireTracking && !trackingNumberInput.trim()) {
+      setActionError('请先填写运单号');
+      return;
+    }
 
-    setActionError(null);
     startTransition(async () => {
       const result = await updateOrderStatus(
         selectedOrder.order.id,
         nextStatusAction.nextStatus,
-        nextStatusAction.requireTracking ? trackingNumberInput || undefined : undefined,
-        selectedOrder.equipmentId
+        nextStatusAction.requireTracking ? trackingNumberInput.trim() : undefined,
       );
 
       if (!result.success) {
-        setActionError(result.error ?? '状态更新失败，请稍后重试');
+        setActionError(result.error ?? '状态更新失败');
         return;
       }
 
       setCopyMessage(nextStatusAction.nextStatus === 'using' ? '已完成发货，设备状态已同步为出租中' : '已完成归还，设备状态已同步为空闲');
-      setSelectedOrder((current) =>
-        current
-          ? {
-              ...current,
-              order: {
-                ...current.order,
-                status: nextStatusAction.nextStatus,
-                tracking_number: nextStatusAction.requireTracking ? trackingNumberInput : current.order.tracking_number,
-              },
-            }
-          : null
-      );
-      if (nextStatusAction.requireTracking) {
-        setConfirmShip(false);
-      }
+      setSelectedOrder((current) => current ? {
+        ...current,
+        order: {
+          ...current.order,
+          status: nextStatusAction.nextStatus as OrderType['status'],
+          tracking_number: nextStatusAction.requireTracking ? trackingNumberInput : current.order.tracking_number,
+        },
+      } : null);
+      if (nextStatusAction.requireTracking) setConfirmShip(false);
     });
+  };
+
+  const openEditMode = () => {
+    if (!selectedOrder) return;
+    const order = selectedOrder.order;
+    setEditForm({
+      customer_name: order.customer_name ?? '',
+      customer_phone: order.customer_phone ?? '',
+      shipping_address: order.shipping_address ?? '',
+      start_date: order.start_date ?? '',
+      end_date: order.end_date ?? '',
+      equipment_id: selectedOrder.equipmentId,
+      notes: order.notes ?? '',
+    });
+    setEditDateRange(
+      order.start_date && order.end_date
+        ? { from: new Date(order.start_date), to: new Date(order.end_date) }
+        : order.start_date
+        ? { from: new Date(order.start_date), to: new Date(order.start_date) }
+        : undefined
+    );
+    setIsEditing(true);
+  };
+
+  const cancelEdit = () => {
+    setIsEditing(false);
+    setEditForm({ customer_name: '', customer_phone: '', shipping_address: '', start_date: '', end_date: '', equipment_id: '', notes: '' });
+    setEditDateRange(undefined);
+  };
+
+  const handleSaveEdit = () => {
+    if (!selectedOrder) return;
+    const resolvedStart = editDateRange?.from ? format(editDateRange.from, 'yyyy-MM-dd') : undefined;
+    const resolvedEnd = editDateRange?.to ? format(editDateRange.to, 'yyyy-MM-dd') : undefined;
+    startTransition(async () => {
+      const result = await updateOrderFields(selectedOrder.order.id, {
+        customer_name: editForm.customer_name,
+        customer_phone: editForm.customer_phone,
+        shipping_address: editForm.shipping_address,
+        start_date: resolvedStart,
+        end_date: resolvedEnd,
+        equipment_id: editForm.equipment_id,
+        notes: editForm.notes,
+      });
+      if (!result.success) {
+        setActionError(result.error ?? '保存失败');
+        return;
+      }
+      const eq = equipmentList.find((e) => e.id === editForm.equipment_id);
+      setSelectedOrder((current) => current ? {
+        ...current,
+        equipmentId: editForm.equipment_id,
+        equipmentName: eq?.name ?? current.equipmentName,
+        order: {
+          ...current.order,
+          customer_name: editForm.customer_name || undefined,
+          customer_phone: editForm.customer_phone || undefined,
+          shipping_address: editForm.shipping_address || undefined,
+          start_date: resolvedStart || undefined,
+          end_date: resolvedEnd || undefined,
+          equipment_id: editForm.equipment_id,
+          notes: editForm.notes || undefined,
+        },
+      } : null);
+      setIsEditing(false);
+      setCopyMessage('订单信息已更新');
+    });
+  };
+
+  const handleSfOneClick = async () => {
+    if (!selectedOrder) return;
+    if (!selectedOrder.order.customer_name || !selectedOrder.order.customer_phone || !selectedOrder.order.shipping_address) {
+      setSfError('订单缺少收件人信息，请先补充收件人姓名、电话和收货地址');
+      return;
+    }
+    setSfLoading(true);
+    setSfError(null);
+    try {
+      const res = await fetch('/api/shipping/sf-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId: selectedOrder.order.id }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setSfError(data.error ?? '顺丰下单失败，请稍后重试');
+        return;
+      }
+      setTrackingNumberInput(data.tracking_number);
+      setConfirmShip(true);
+      setCopyMessage(`顺丰下单成功，运单号：${data.tracking_number}`);
+    } catch {
+      setSfError('网络请求失败，请稍后重试');
+    } finally {
+      setSfLoading(false);
+    }
   };
 
   return (
     <>
-      <SurfaceCard className="p-0">
+      <SurfaceCard className="overflow-hidden p-0">
         <div className="border-b border-slate-100 px-4 py-4 sm:px-6 sm:py-5">
           <SectionHeader
             title="排期看板"
@@ -412,15 +450,11 @@ export default function GanttChart({ equipment }: GanttChartProps) {
           <FilterPanel className="xl:grid-cols-[minmax(0,1.3fr)_auto] xl:items-end">
             <div className="grid gap-4 md:grid-cols-3">
               <div>
-                <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">搜索</p>
-                <TextInput
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="设备名 / 序列号 / 客户名"
-                />
+                <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">搜索</p>
+                <TextInput value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="设备名 / 序列号 / 客户名" />
               </div>
               <div>
-                <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">订单状态</p>
+                <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">订单状态</p>
                 <SelectInput value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
                   <option value="all">全部状态</option>
                   <option value="pending_payment">待支付</option>
@@ -431,32 +465,22 @@ export default function GanttChart({ equipment }: GanttChartProps) {
                 </SelectInput>
               </div>
               <div>
-                <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">设备分类</p>
+                <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">设备分类</p>
                 <SelectInput value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
                   <option value="all">全部分类</option>
-                  {categories.map((category) => (
-                    <option key={category} value={category}>
-                      {category}
-                    </option>
-                  ))}
+                  {categories.map((category) => <option key={category} value={category}>{category}</option>)}
                 </SelectInput>
               </div>
             </div>
 
             <div className="flex flex-col gap-3 xl:items-end">
               <div className="flex flex-wrap items-center gap-2">
-                <SecondaryButton onClick={() => scrollByDays(-1)}>
-                  <ChevronLeft className="h-4 w-4" />上周
-                </SecondaryButton>
+                <SecondaryButton onClick={() => scrollByDays(-1)}><ChevronLeft className="h-4 w-4" />上周</SecondaryButton>
                 <PrimaryButton onClick={() => scrollToDayIndex(PAST_DAYS)}>跳转今天</PrimaryButton>
-                <SecondaryButton onClick={() => scrollByDays(1)}>
-                  下周<ChevronRight className="h-4 w-4" />
-                </SecondaryButton>
-                <SecondaryButton onClick={resetFilters}>
-                  <RotateCcw className="h-4 w-4" />重置筛选
-                </SecondaryButton>
+                <SecondaryButton onClick={() => scrollByDays(1)}>下周<ChevronRight className="h-4 w-4" /></SecondaryButton>
+                <SecondaryButton onClick={resetFilters}><RotateCcw className="h-4 w-4" />重置筛选</SecondaryButton>
               </div>
-              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--text-muted)]">
                 <StatBadge tone="slate">范围：{toDateKey(days[0])} ~ {toDateKey(days[days.length - 1])}</StatBadge>
                 <StatBadge tone="slate">当前结果：{filteredEquipment.length} 台 / {totalOrders} 条排期</StatBadge>
               </div>
@@ -470,10 +494,7 @@ export default function GanttChart({ equipment }: GanttChartProps) {
           onMouseLeave={stopDragging}
           onMouseUp={stopDragging}
           onMouseMove={handleMouseMove}
-          className={cn(
-            'overflow-x-auto overflow-y-visible p-4 select-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
-            isDragging ? 'cursor-grabbing' : 'cursor-grab'
-          )}
+          className={cn('overflow-x-auto overflow-y-visible p-4 select-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden', isDragging ? 'cursor-grabbing' : 'cursor-grab')}
         >
           {filteredEquipment.length === 0 ? (
             <EmptyState>当前筛选条件下暂无排期数据</EmptyState>
@@ -483,23 +504,18 @@ export default function GanttChart({ equipment }: GanttChartProps) {
                 <tr>
                   <th
                     rowSpan={2}
-                    className="sticky left-0 z-40 border-b border-slate-100 bg-white/96 px-4 py-3 text-center font-semibold text-slate-500 backdrop-blur-xl"
-                    style={{ width: STICKY_COLUMN_WIDTH, minWidth: STICKY_COLUMN_WIDTH, boxShadow: '12px 0 24px -18px rgba(15, 23, 42, 0.10)' }}
+                    className="sticky left-0 z-40 border-b border-r border-slate-200 bg-slate-50 px-4 py-3 text-center font-semibold text-slate-500 shadow-[6px_0_16px_-6px_rgba(0,0,0,0.10)]"
+                    style={{ width: STICKY_COLUMN_WIDTH, minWidth: STICKY_COLUMN_WIDTH }}
                   >
                     <span className="flex items-center justify-center">设备</span>
                   </th>
                   {monthGroups.map((group) => {
-                    const containsToday = days
-                      .slice(group.startIndex, group.startIndex + group.span)
-                      .some((date) => isSameDay(date, today));
+                    const containsToday = days.slice(group.startIndex, group.startIndex + group.span).some((date) => isSameDay(date, today));
                     return (
                       <th
                         key={`${group.label}-${group.startIndex}`}
                         colSpan={group.span}
-                        className={cn(
-                          'border-b border-slate-100 px-3 py-2 text-left text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400',
-                          containsToday && 'bg-sky-50/65 text-sky-700'
-                        )}
+                        className={cn('border-b border-slate-100 bg-white px-3 py-2 text-left text-[11px] font-medium uppercase tracking-[0.14em] text-slate-500', containsToday && 'bg-indigo-50 text-indigo-600')}
                       >
                         {group.label}
                       </th>
@@ -512,28 +528,18 @@ export default function GanttChart({ equipment }: GanttChartProps) {
                     const holiday = isHoliday(dateKey);
                     const weekend = isWeekend(date);
                     const todayColumn = isSameDay(date, today);
-
                     return (
                       <th
                         key={dateKey}
                         className={cn(
-                          'relative border-b border-slate-100 px-1 py-3 text-center font-medium',
-                          holiday
-                            ? 'bg-rose-50/70 text-rose-500'
-                            : weekend
-                              ? 'bg-slate-50/70 text-slate-600'
-                              : 'text-slate-400',
-                          todayColumn && 'z-10 bg-sky-50/70'
+                          'relative border-b border-slate-100 bg-white px-1 py-3 text-center font-medium',
+                          holiday ? 'bg-rose-50/80 text-rose-600' : weekend ? 'bg-slate-50 text-slate-500' : 'text-slate-500',
+                          todayColumn && 'z-10 bg-indigo-50'
                         )}
                         style={{ width: DAY_COLUMN_WIDTH }}
                       >
-                        {todayColumn ? <span className="pointer-events-none absolute inset-y-0 left-0 w-px bg-sky-300/80" /> : null}
-                        <div
-                          className={cn(
-                            'mx-auto flex w-fit items-center gap-1 rounded-md px-2 py-1',
-                            todayColumn && 'bg-white/88 font-semibold text-sky-700 ring-1 ring-sky-100'
-                          )}
-                        >
+                        {todayColumn ? <span className="pointer-events-none absolute inset-y-0 left-0 w-px bg-indigo-300" /> : null}
+                        <div className={cn('mx-auto flex w-fit items-center gap-1 rounded-md px-2 py-1', todayColumn && 'bg-white font-semibold text-indigo-600 ring-1 ring-indigo-100')}>
                           <span>{formatDayLabel(date)}</span>
                           {holiday ? <span className="text-[10px] font-semibold">休</span> : null}
                         </div>
@@ -545,20 +551,18 @@ export default function GanttChart({ equipment }: GanttChartProps) {
               <tbody>
                 {filteredEquipment.map((item, rowIndex) => {
                   const equipmentStatus = getEquipmentStatusBadge(item.status);
-                  const equipmentStatusDotTone = getEquipmentStatusDotTone(item.orders, item.status);
+                  const equipmentStatusDotTone = getEquipmentStatusDotTone();
                   const EquipmentStatusIcon = equipmentStatus.icon;
 
                   return (
                     <tr key={item.id}>
                       <td
-                        className="sticky left-0 z-30 border-b border-slate-100 bg-white/94 px-2 py-2.5 font-medium text-slate-800 backdrop-blur-xl"
-                        style={{ width: STICKY_COLUMN_WIDTH, minWidth: STICKY_COLUMN_WIDTH, boxShadow: '10px 0 20px -18px rgba(15, 23, 42, 0.08)' }}
+                        className="sticky left-0 z-30 border-b border-r border-slate-100 bg-slate-50 pl-4 pr-2 py-2.5 font-medium text-slate-900 shadow-[6px_0_16px_-6px_rgba(0,0,0,0.10)]"
+                        style={{ width: STICKY_COLUMN_WIDTH, minWidth: STICKY_COLUMN_WIDTH }}
                       >
-                        <div className="flex items-center gap-1.5">
-                          <p className="min-w-0 truncate text-[12px] font-semibold tracking-[-0.01em] text-slate-600">{item.name}</p>
-                          <span
-                            className={cn('inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full shadow-[0_1px_2px_rgba(15,23,42,0.08)]', equipmentStatusDotTone)}
-                          >
+                        <div className="flex items-center gap-2">
+                          <span className="min-w-0 text-[12px] font-semibold leading-5 text-slate-900">{item.name}</span>
+                          <span className={cn('inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full shadow-sm', equipmentStatusDotTone)}>
                             <EquipmentStatusIcon className="h-2.5 w-2.5" />
                           </span>
                         </div>
@@ -576,12 +580,8 @@ export default function GanttChart({ equipment }: GanttChartProps) {
 
                         if (!order) {
                           return (
-                            <td
-                              key={`${item.id}-${dateKey}`}
-                              className={cn('relative h-16 border-b border-slate-100', getColumnTone({ holiday, weekend, todayColumn }))}
-                              style={{ width: DAY_COLUMN_WIDTH }}
-                            >
-                              {todayColumn ? <span className="pointer-events-none absolute inset-y-0 left-0 z-0 w-px bg-sky-300/80" /> : null}
+                            <td key={`${item.id}-${dateKey}`} className={cn('relative h-16 border-b border-slate-100', getColumnTone({ holiday, weekend, todayColumn }))} style={{ width: DAY_COLUMN_WIDTH }}>
+                              {todayColumn ? <span className="pointer-events-none absolute inset-y-0 left-0 z-0 w-px bg-indigo-300" /> : null}
                             </td>
                           );
                         }
@@ -595,17 +595,10 @@ export default function GanttChart({ equipment }: GanttChartProps) {
                         const tooltipPlacement = getTooltipPlacement(index, clampedSpan, days.length, rowIndex, filteredEquipment.length);
 
                         return (
-                          <td
-                            key={`${item.id}-${dateKey}`}
-                            className={cn('relative h-16 border-b border-slate-100 p-0', getColumnTone({ holiday, weekend, todayColumn }))}
-                            style={{ width: DAY_COLUMN_WIDTH }}
-                          >
-                            {todayColumn ? <span className="pointer-events-none absolute inset-y-0 left-0 z-0 w-px bg-sky-300/80" /> : null}
+                          <td key={`${item.id}-${dateKey}`} className={cn('relative h-16 border-b border-slate-100 p-0', getColumnTone({ holiday, weekend, todayColumn }))} style={{ width: DAY_COLUMN_WIDTH }}>
+                            {todayColumn ? <span className="pointer-events-none absolute inset-y-0 left-0 z-0 w-px bg-indigo-300" /> : null}
                             <div
-                              className={cn(
-                                'absolute inset-y-2 left-0 z-10 overflow-visible transition-transform duration-150',
-                                isHovered && 'scale-[1.01]'
-                              )}
+                              className={cn('absolute inset-y-2 left-0 z-20 overflow-visible transition-all duration-150', isHovered && 'z-40 scale-[1.01]')}
                               style={{ width: `calc(${DAY_COLUMN_WIDTH}px * ${clampedSpan})` }}
                               onMouseEnter={() => setHoveredOrderId(order.id)}
                               onMouseLeave={() => setHoveredOrderId((current) => (current === order.id ? null : current))}
@@ -617,55 +610,33 @@ export default function GanttChart({ equipment }: GanttChartProps) {
                                   setCopyMessage(null);
                                   setConfirmShip(false);
                                   setTrackingNumberInput(order.tracking_number || '');
-                                  setSelectedOrder({
-                                    order,
-                                    equipmentId: item.id,
-                                    equipmentName: item.name,
-                                    category: item.category,
-                                  });
+                                  setSelectedOrder({ order, equipmentId: item.id, equipmentName: item.name, category: item.category });
                                 }}
                                 className="block h-full w-full text-left outline-none"
                               >
-                                <div
-                                  className={cn(
-                                    'flex h-full items-center justify-between gap-2 overflow-hidden rounded-xl px-2.5 py-1.5 shadow-[0_10px_24px_rgba(255,255,255,0.22)] transition-all duration-150',
-                                    pill.bar,
-                                    isHovered && 'ring-2 ring-white/65'
-                                  )}
-                                >
+                                <div className={cn('flex h-full items-center justify-between gap-2 overflow-hidden rounded-xl px-2.5 py-1.5 shadow-sm transition-all duration-150', pill.bar, isHovered && 'ring-2 ring-indigo-100')}>
                                   <div className="min-w-0">
-                                    <p className="truncate text-[11px] font-semibold leading-4">{order.customer_name ?? '订单'}</p>
-                                    <p className="truncate text-[10px] text-slate-700/70">{pill.label}</p>
+                                    <div className="flex items-center gap-1">
+                                      <p className="truncate text-[11px] font-semibold leading-4">{order.customer_name ?? '订单'}</p>
+                                      {order.notes ? <span className="shrink-0 text-[10px]">📝</span> : null}
+                                    </div>
+                                    <p className="truncate text-[10px] text-slate-500">{pill.label}</p>
                                   </div>
-                                  {clampedSpan >= 2 ? <span className="shrink-0 rounded-full bg-white/45 px-2 py-0.5 text-[10px] font-medium text-slate-700">{rawSpan} 天</span> : null}
+                                  {clampedSpan >= 2 ? <span className="shrink-0 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-medium text-slate-500">{rawSpan} 天</span> : null}
                                 </div>
                               </button>
 
                               {isHovered ? (
-                                <div
-                                  className={cn(
-                                    'absolute z-30 w-56 rounded-[22px] border border-white/75 bg-white/92 p-4 text-left text-slate-700 shadow-[0_18px_44px_rgba(15,23,42,0.08)] backdrop-blur-xl sm:w-64',
-                                    tooltipPlacement.horizontal === 'right' ? 'right-0' : 'left-0',
-                                    tooltipPlacement.vertical === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'
-                                  )}
-                                >
+                                <div className={cn('absolute z-30 w-56 rounded-2xl bg-white p-4 text-left shadow-lg sm:w-64', tooltipPlacement.horizontal === 'right' ? 'right-0' : 'left-0', tooltipPlacement.vertical === 'top' ? 'bottom-full mb-2' : 'top-full mt-2')}>
                                   <div className="flex items-center justify-between gap-3">
                                     <p className="text-sm font-semibold text-slate-900">{order.customer_name ?? '未命名客户'}</p>
                                     <span className={cn('rounded-full px-2.5 py-1 text-[10px] font-semibold', pill.accent)}>{pill.label}</span>
                                   </div>
-                                  <div className="mt-3 space-y-2 text-xs">
-                                    <div className="flex items-start justify-between gap-3">
-                                      <span className="text-slate-400">设备</span>
-                                      <span className="text-right font-medium text-slate-700">{item.name}</span>
-                                    </div>
-                                    <div className="flex items-start justify-between gap-3">
-                                      <span className="text-slate-400">时间</span>
-                                      <span className="text-right font-medium text-slate-700">{order.start_date} ~ {order.end_date}</span>
-                                    </div>
-                                    <div className="flex items-start justify-between gap-3">
-                                      <span className="text-slate-400">电话</span>
-                                      <span className="font-medium text-slate-700">{order.customer_phone || '—'}</span>
-                                    </div>
+                                  <div className="mt-3 space-y-2 text-xs text-slate-700">
+                                    <div className="flex items-start justify-between gap-3"><span className="text-slate-400">设备</span><span className="text-right font-medium">{item.name}</span></div>
+                                    <div className="flex items-start justify-between gap-3"><span className="text-slate-400">时间</span><span className="text-right font-medium">{order.start_date} ~ {order.end_date}</span></div>
+                                    <div className="flex items-start justify-between gap-3"><span className="text-slate-400">电话</span><span className="font-medium">{order.customer_phone || '—'}</span></div>
+                                    {order.notes ? <div className="rounded-lg bg-amber-50 px-2.5 py-2 text-amber-700"><span className="font-medium">📝 </span>{order.notes}</div> : null}
                                     <p className="pt-2 text-[11px] text-slate-400">点击色块可查看完整订单详情</p>
                                   </div>
                                 </div>
@@ -687,10 +658,14 @@ export default function GanttChart({ equipment }: GanttChartProps) {
         open={Boolean(selectedOrder)}
         onClose={() => {
           setSelectedOrder(null);
+          setIsEditing(false);
+          setEditForm({ customer_name: '', customer_phone: '', shipping_address: '', start_date: '', end_date: '', equipment_id: '', notes: '' });
+          setEditDateRange(undefined);
           setActionError(null);
           setCopyMessage(null);
           setTrackingNumberInput('');
           setConfirmShip(false);
+          setSfError(null);
         }}
         eyebrow="Order Detail"
         icon={Package2}
@@ -698,51 +673,41 @@ export default function GanttChart({ equipment }: GanttChartProps) {
         maxWidthClassName="max-w-3xl"
         footer={
           <div className="space-y-3">
-            {(actionError || copyMessage) ? (
-              <p className={cn('text-sm', actionError ? 'text-rose-500' : 'text-emerald-600')}>
-                {actionError || copyMessage}
+            {(actionError || copyMessage || sfError) ? (
+              <p className={cn('text-sm', actionError || sfError ? 'text-rose-600' : 'text-foreground')}>
+                {actionError || sfError || copyMessage}
               </p>
             ) : null}
             <div className="flex flex-wrap justify-end gap-2">
-              {selectedOrder ? (
-                <SecondaryButton onClick={() => handleCopy(selectedOrder.order.customer_phone || '', '已复制联系电话')} disabled={!selectedOrder.order.customer_phone}>
-                  <Clipboard className="h-4 w-4" />复制电话
-                </SecondaryButton>
-              ) : null}
-              {selectedOrder ? (
-                <SecondaryButton onClick={() => handleCopy(selectedOrder.order.shipping_address || '', '已复制收货地址')} disabled={!selectedOrder.order.shipping_address}>
-                  <MapPin className="h-4 w-4" />复制地址
-                </SecondaryButton>
-              ) : null}
-              {selectedOrder ? (
-                <SecondaryButton onClick={() => handleCopy(buildOrderSummary(selectedOrder), '已复制订单摘要')}>
-                  <Clipboard className="h-4 w-4" />复制摘要
-                </SecondaryButton>
-              ) : null}
-              {nextStatusAction ? (
-                nextStatusAction.tone === 'primary' ? (
-                  <PrimaryButton onClick={handleStatusAction} disabled={isPending || (nextStatusAction.requireTracking && !confirmShip)}>
-                    {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <nextStatusAction.icon className="h-4 w-4" />}
-                    {confirmShip && nextStatusAction.requireTracking ? '确认发货' : nextStatusAction.label}
+              {!isEditing ? (
+                <>
+                  <Button variant="outline" size="sm" onClick={openEditMode} className="gap-1.5 rounded-full border-indigo-200 text-indigo-700 hover:bg-indigo-50 hover:border-indigo-300">
+                    <Edit2 className="h-3.5 w-3.5" />编辑订单
+                  </Button>
+                  {selectedOrder ? <SecondaryButton onClick={() => handleCopy(selectedOrder.order.customer_phone || '', '已复制联系电话')} disabled={!selectedOrder.order.customer_phone}><Clipboard className="h-4 w-4" />复制电话</SecondaryButton> : null}
+                  {selectedOrder ? <SecondaryButton onClick={() => handleCopy(selectedOrder.order.shipping_address || '', '已复制收货地址')} disabled={!selectedOrder.order.shipping_address}><MapPin className="h-4 w-4" />复制地址</SecondaryButton> : null}
+                  {selectedOrder ? <SecondaryButton onClick={() => handleCopy(buildOrderSummary(selectedOrder), '已复制订单摘要')}><Clipboard className="h-4 w-4" />复制摘要</SecondaryButton> : null}
+                  {nextStatusAction ? nextStatusAction.tone === 'primary' ? (
+                    <PrimaryButton onClick={handleStatusAction} disabled={isPending || (nextStatusAction.requireTracking && !confirmShip)}>
+                      {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <nextStatusAction.icon className="h-4 w-4" />}
+                      {confirmShip && nextStatusAction.requireTracking ? '确认发货' : nextStatusAction.label}
+                    </PrimaryButton>
+                  ) : (
+                    <SecondaryButton onClick={handleStatusAction} disabled={isPending}>
+                      {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <nextStatusAction.icon className="h-4 w-4" />}
+                      {nextStatusAction.label}
+                    </SecondaryButton>
+                  ) : null}
+                  <SecondaryButton onClick={() => { setSelectedOrder(null); setActionError(null); setCopyMessage(null); setTrackingNumberInput(''); setConfirmShip(false); }}>关闭</SecondaryButton>
+                </>
+              ) : (
+                <>
+                  <SecondaryButton onClick={cancelEdit} disabled={isPending}><X className="h-4 w-4" />取消</SecondaryButton>
+                  <PrimaryButton onClick={handleSaveEdit} disabled={isPending}>
+                    {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}保存修改
                   </PrimaryButton>
-                ) : (
-                  <SecondaryButton onClick={handleStatusAction} disabled={isPending}>
-                    {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <nextStatusAction.icon className="h-4 w-4" />}
-                    {nextStatusAction.label}
-                  </SecondaryButton>
-                )
-              ) : null}
-              <SecondaryButton
-                onClick={() => {
-                  setSelectedOrder(null);
-                  setActionError(null);
-                  setCopyMessage(null);
-                  setTrackingNumberInput('');
-                  setConfirmShip(false);
-                }}
-              >
-                关闭
-              </SecondaryButton>
+                </>
+              )}
             </div>
           </div>
         }
@@ -755,26 +720,37 @@ export default function GanttChart({ equipment }: GanttChartProps) {
               {selectedOrder.category ? <StatBadge tone="slate">分类：{selectedOrder.category}</StatBadge> : null}
             </div>
 
-            {nextStatusAction?.requireTracking ? (
-              <div className="space-y-3 rounded-[24px] border border-sky-200/70 bg-sky-50/72 p-4">
-                <div className="flex items-center gap-2 text-sky-700">
+            {nextStatusAction?.requireTracking && !isEditing ? (
+              <div className="space-y-3 rounded-2xl bg-amber-50 p-4">
+                <div className="flex items-center gap-2 text-amber-700">
                   <Truck className="h-4 w-4" />
                   <p className="text-sm font-semibold">发货前请录入运单号</p>
                 </div>
-                <TextInput
-                  value={trackingNumberInput}
-                  onChange={(e) => {
-                    setTrackingNumberInput(e.target.value);
-                    if (confirmShip) setConfirmShip(false);
-                  }}
-                  placeholder="请输入顺丰 / 京东 / 菜鸟等运单号"
-                />
-                <label className="flex items-start gap-3 rounded-[20px] border border-amber-200/75 bg-white/80 px-3 py-3 text-sm text-amber-800 backdrop-blur-sm">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+                  <div className="flex-1">
+                    <TextInput
+                      value={trackingNumberInput}
+                      onChange={(e) => { setTrackingNumberInput(e.target.value); if (confirmShip) setConfirmShip(false); }}
+                      placeholder="请输入顺丰 / 京东 / 菜鸟等运单号"
+                    />
+                  </div>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={handleSfOneClick}
+                    disabled={sfLoading}
+                    className="shrink-0 gap-1.5 rounded-2xl bg-indigo-600 px-4 py-3 text-[13px] font-medium text-white shadow-sm transition-all hover:bg-indigo-500 active:scale-[0.98] disabled:opacity-60"
+                  >
+                    {sfLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    顺丰一键下单
+                  </Button>
+                </div>
+                <label className="flex items-start gap-3 rounded-2xl bg-white px-3 py-3 text-sm text-slate-700">
                   <input
                     type="checkbox"
                     checked={confirmShip}
                     onChange={(e) => setConfirmShip(e.target.checked)}
-                    className="mt-0.5 h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                   />
                   <span className="flex items-start gap-2">
                     <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -784,44 +760,111 @@ export default function GanttChart({ equipment }: GanttChartProps) {
               </div>
             ) : null}
 
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              <InfoCard icon={Package2} label="设备" value={selectedOrder.equipmentName} />
-              <InfoCard icon={CalendarRange} label="租赁时间" value={`${selectedOrder.order.start_date} ~ ${selectedOrder.order.end_date}`} />
-              <InfoCard icon={UserRound} label="客户姓名" value={selectedOrder.order.customer_name || '—'} />
-              <InfoCard icon={Phone} label="联系电话" value={selectedOrder.order.customer_phone || '—'} />
-              <InfoCard icon={MapPin} label="收货地址" value={selectedOrder.order.shipping_address || '—'} />
-              <InfoCard icon={CalendarRange} label="订单金额" value={`¥${Number(selectedOrder.order.total_price || 0).toFixed(2)}`} />
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <InfoTile className="p-5">
-                <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">物流信息</p>
-                <div className="mt-4 space-y-3 text-sm text-slate-600">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-slate-400">运单号</span>
-                    <span className="font-medium text-slate-700">{selectedOrder.order.tracking_number || '暂未录入'}</span>
+            {isEditing ? (
+              <div className="space-y-4 rounded-2xl border border-indigo-200 bg-indigo-50/50 p-5">
+                <p className="flex items-center gap-2 text-sm font-semibold text-indigo-700">
+                  <Edit2 className="h-4 w-4" />编辑订单信息
+                </p>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label className="text-[12px] font-medium text-slate-500">设备</label>
+                    <SelectInput
+                      value={editForm.equipment_id}
+                      onChange={(e) => setEditForm((f) => ({ ...f, equipment_id: e.target.value }))}
+                    >
+                      {equipmentList.map((eq) => (
+                        <option key={eq.id} value={eq.id}>{eq.name}{eq.serial_number ? ` · ${eq.serial_number}` : ''}</option>
+                      ))}
+                    </SelectInput>
                   </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-slate-400">免押方式</span>
-                    <span className="font-medium text-slate-700">{selectedOrder.order.deposit_exemption || '—'}</span>
+                  <div className="space-y-1.5">
+                    <label className="text-[12px] font-medium text-slate-500">客户姓名</label>
+                    <TextInput
+                      value={editForm.customer_name}
+                      onChange={(e) => setEditForm((f) => ({ ...f, customer_name: e.target.value }))}
+                      placeholder="收件人姓名"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[12px] font-medium text-slate-500">联系电话</label>
+                    <TextInput
+                      value={editForm.customer_phone}
+                      onChange={(e) => setEditForm((f) => ({ ...f, customer_phone: e.target.value }))}
+                      placeholder="收件人电话"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[12px] font-medium text-slate-500">租赁期限</label>
+                    <DateRangePicker
+                      date={editDateRange}
+                      onDateChange={setEditDateRange}
+                      placeholder="请选择租赁期限..."
+                    />
+                  </div>
+                  <div className="md:col-span-2 space-y-1.5">
+                    <label className="text-[12px] font-medium text-slate-500">收货地址</label>
+                    <textarea
+                      value={editForm.shipping_address}
+                      onChange={(e) => setEditForm((f) => ({ ...f, shipping_address: e.target.value }))}
+                      placeholder="详细收货地址"
+                      rows={2}
+                      className="w-full resize-none rounded-2xl border border-input bg-background px-4 py-3 text-[14px] text-foreground shadow-sm transition-all outline-none focus:border-foreground/30 focus:ring-2 focus:ring-foreground/10"
+                    />
+                  </div>
+                  <div className="md:col-span-2 space-y-1.5">
+                    <label className="text-[12px] font-medium text-slate-500">订单备注</label>
+                    <textarea
+                      value={editForm.notes}
+                      onChange={(e) => setEditForm((f) => ({ ...f, notes: e.target.value }))}
+                      placeholder="客户特殊需求、注意事项等..."
+                      rows={3}
+                      className="w-full resize-none rounded-2xl border border-input bg-background px-4 py-3 text-[14px] text-foreground shadow-sm transition-all outline-none focus:border-foreground/30 focus:ring-2 focus:ring-foreground/10"
+                    />
                   </div>
                 </div>
-              </InfoTile>
-
-              <InfoTile className="p-5">
-                <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">费用信息</p>
-                <div className="mt-4 space-y-3 text-sm text-slate-600">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-slate-400">订单金额</span>
-                    <span className="font-medium text-slate-700">¥{Number(selectedOrder.order.total_price || 0).toFixed(2)}</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-slate-400">已付押金</span>
-                    <span className="font-medium text-slate-700">¥{Number(selectedOrder.order.deposit_paid || 0).toFixed(2)}</span>
-                  </div>
+              </div>
+            ) : (
+              <>
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  <InfoCard icon={Package2} label="设备" value={selectedOrder.equipmentName} />
+                  <InfoCard icon={CalendarRange} label="租赁时间" value={`${selectedOrder.order.start_date} ~ ${selectedOrder.order.end_date}`} />
+                  <InfoCard icon={UserRound} label="客户姓名" value={selectedOrder.order.customer_name || '—'} />
+                  <InfoCard icon={Phone} label="联系电话" value={selectedOrder.order.customer_phone || '—'} />
+                  <InfoCard icon={MapPin} label="收货地址" value={selectedOrder.order.shipping_address || '—'} />
+                  <InfoCard icon={CalendarRange} label="订单金额" value={`¥${Number(selectedOrder.order.total_price || 0).toFixed(2)}`} />
                 </div>
-              </InfoTile>
-            </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <InfoTile className="p-5">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">物流信息</p>
+                    <div className="mt-4 space-y-3 text-sm text-slate-700">
+                      <div className="flex items-center justify-between gap-3"><span className="text-slate-400">运单号</span><span className="font-medium">{selectedOrder.order.tracking_number || '暂未录入'}</span></div>
+                      <div className="flex items-center justify-between gap-3"><span className="text-slate-400">免押方式</span><span className="font-medium">{selectedOrder.order.deposit_exemption || '—'}</span></div>
+                    </div>
+                  </InfoTile>
+
+                  <InfoTile className="p-5">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">费用信息</p>
+                    <div className="mt-4 space-y-3 text-sm text-slate-700">
+                      <div className="flex items-center justify-between gap-3"><span className="text-slate-400">订单金额</span><span className="font-medium">¥{Number(selectedOrder.order.total_price || 0).toFixed(2)}</span></div>
+                      <div className="flex items-center justify-between gap-3"><span className="text-slate-400">已付押金</span><span className="font-medium">¥{Number(selectedOrder.order.deposit_paid || 0).toFixed(2)}</span></div>
+                    </div>
+                  </InfoTile>
+                </div>
+
+                {selectedOrder.order.notes ? (
+                  <InfoTile className="p-4">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">订单备注</p>
+                    <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{selectedOrder.order.notes}</p>
+                  </InfoTile>
+                ) : (
+                  <InfoTile className="p-4">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">订单备注</p>
+                    <p className="mt-3 text-sm text-muted-foreground">暂无备注</p>
+                  </InfoTile>
+                )}
+              </>
+            )}
           </div>
         ) : null}
       </Modal>

@@ -39,7 +39,7 @@ export default function ClientTabs({ dispatchCount, pendingCount, activeCount }:
   } as const;
 
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-[26px] border border-white/70 bg-white/76 px-3 py-2.5 shadow-[0_14px_36px_rgba(15,23,42,0.045)] backdrop-blur-xl">
+    <nav className="flex items-center gap-1 rounded-2xl border border-border/70 bg-card p-1 shadow-sm">
       {tabs.map((tab) => {
         const isActive = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
         const count = counts[tab.href as keyof typeof counts];
@@ -49,18 +49,18 @@ export default function ClientTabs({ dispatchCount, pendingCount, activeCount }:
             key={tab.href}
             href={tab.href}
             className={cn(
-              'inline-flex items-center gap-2 rounded-full px-3.5 py-2 text-sm font-medium transition-all',
+              'inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all duration-200',
               isActive
-                ? 'bg-slate-900 text-white shadow-[0_10px_22px_rgba(15,23,42,0.12)]'
-                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                ? 'bg-zinc-900 text-zinc-50 shadow-sm'
+                : 'text-foreground hover:bg-muted/60'
             )}
           >
             <span>{tab.label}</span>
             {typeof count === 'number' ? (
               <span
                 className={cn(
-                  'rounded-full px-2 py-0.5 text-xs font-semibold leading-5',
-                  isActive ? 'bg-white/18 text-white' : tab.badgeTone ? badgeClassNames[tab.badgeTone] : 'border border-slate-200/75 bg-white/70 text-slate-600'
+                  'rounded-full px-2 py-0.5 text-[11px] font-semibold leading-4',
+                  isActive ? 'bg-white/15 text-white' : tab.badgeTone ? badgeClassNames[tab.badgeTone] : 'border border-border/70 bg-muted/40 text-muted-foreground'
                 )}
               >
                 {count}
@@ -69,6 +69,6 @@ export default function ClientTabs({ dispatchCount, pendingCount, activeCount }:
           </Link>
         );
       })}
-    </div>
+    </nav>
   );
 }

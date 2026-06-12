@@ -1,9 +1,23 @@
 "use server";
 
 import { revalidatePath } from 'next/cache';
-import { supabase } from '../../lib/supabaseClient';
-
+import { createClient as createAdminClient } from '@supabase/supabase-js';
+import { createClient } from '@/lib/supabase/server';
 import type { Equipment, Order } from './types';
+
+const supabaseAdmin = createAdminClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
+
+async function requireAuth() {
+  const supabase = await createClient();
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) {
+    throw new Error('UNAUTHORIZED');
+  }
+  return user;
+}
 
 export type AdminData = {
   equipment: (Equipment & {
@@ -14,6 +28,8 @@ export type AdminData = {
 };
 
 export async function getAdminData(): Promise<AdminData> {
+  const supabase = await createClient();
+
   const { data: equipmentData, error: equipmentError } = await supabase
     .from('equipment')
     .select('*')
@@ -50,6 +66,7 @@ export async function getAdminData(): Promise<AdminData> {
 }
 
 export async function getEquipmentList(): Promise<Equipment[]> {
+  const supabase = await createClient();
   const { data, error } = await supabase
     .from('equipment')
     .select('*')
@@ -66,6 +83,9 @@ export async function getEquipmentList(): Promise<Equipment[]> {
 export async function createEquipment(
   formData: FormData
 ): Promise<{ success: boolean; error?: string }> {
+  const user = await requireAuth();
+  const supabase = await createClient();
+
   const name = String(formData.get('name') ?? '').trim();
   const category = String(formData.get('category') ?? '').trim();
   const serial_number = String(formData.get('serial_number') ?? '').trim();
@@ -91,6 +111,7 @@ export async function createEquipment(
     daily_fee,
     deposit,
     status: 'available',
+    user_id: user.id,
   };
 
   if (category) payload.category = category;
@@ -112,7 +133,19 @@ export async function createEquipment(
 export async function deleteEquipment(
   equipmentId: string
 ): Promise<{ success: boolean; error?: string }> {
-  const { error } = await supabase
+  // 先将与该设备关联的订单的 equipment_id 置空，再删除设备
+  // 这样避免外键约束（ON DELETE RESTRICT）导致的删除失败
+  const { error: clearError } = await supabaseAdmin
+    .from('orders')
+    .update({ equipment_id: null })
+    .eq('equipment_id', equipmentId);
+
+  if (clearError) {
+    console.error('Error clearing equipment_id from orders:', clearError);
+    return { success: false, error: clearError.message };
+  }
+
+  const { error } = await supabaseAdmin
     .from('equipment')
     .delete()
     .eq('id', equipmentId);
@@ -130,16 +163,19 @@ export async function deleteEquipment(
 export async function bulkCreateEquipment(
   records: Array<Record<string, unknown>>
 ): Promise<{ success: boolean; error?: string }> {
+  const user = await requireAuth();
+
   if (!Array.isArray(records) || records.length === 0) {
     return { success: false, error: '没有可导入的设备数据' };
   }
 
-  const payload = records.map((record) => ({
-    ...record,
-    status: 'available',
-  }));
+  const payload = records.map((record) => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { issues, rowNumber, ...clean } = record;
+    return { ...clean, status: 'available', user_id: user.id };
+  });
 
-  const { error } = await supabase.from('equipment').insert(payload);
+  const { error } = await supabaseAdmin.from('equipment').insert(payload);
 
   if (error) {
     console.error('Error bulk creating equipment:', error);
@@ -155,6 +191,9 @@ export async function updateEquipmentStatus(
   equipmentId: string,
   newStatus: string
 ): Promise<{ success: boolean; error?: string }> {
+  await requireAuth();
+  const supabase = await createClient();
+
   const { error } = await supabase
     .from('equipment')
     .update({ status: newStatus })
@@ -170,9 +209,62 @@ export async function updateEquipmentStatus(
   return { success: true };
 }
 
+export async function checkEquipmentConflict(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  equipmentId: string,
+  startDate: string,
+  endDate: string,
+  excludeOrderId?: string
+): Promise<{ hasConflict: boolean; conflictingOrder?: { customer_name: string; start_date: string; end_date: string } }> {
+  const { data, error } = await supabase
+    .from('orders')
+    .select('customer_name, start_date, end_date')
+    .eq('equipment_id', equipmentId)
+    .in('status', ['pending_payment', 'confirmed', 'using'])
+    .gte('end_date', startDate);
+
+  if (error || !data || data.length === 0) {
+    return { hasConflict: false };
+  }
+
+  const MS_2_DAYS = 2 * 24 * 60 * 60 * 1000;
+
+  for (const order of data) {
+    if (excludeOrderId) {
+      const { data: excludeData } = await supabase
+        .from('orders')
+        .select('id')
+        .eq('id', excludeOrderId)
+        .maybeSingle();
+      if (excludeData) continue;
+    }
+
+    const existingStart = new Date(order.start_date);
+    const existingEnd = new Date(new Date(order.end_date).getTime() + MS_2_DAYS);
+    const selectedStart = new Date(startDate);
+    const selectedEnd = new Date(endDate);
+
+    if (existingStart <= selectedEnd && existingEnd >= selectedStart) {
+      return {
+        hasConflict: true,
+        conflictingOrder: {
+          customer_name: order.customer_name ?? '未知客户',
+          start_date: order.start_date,
+          end_date: order.end_date,
+        },
+      };
+    }
+  }
+
+  return { hasConflict: false };
+}
+
 export async function createManualOrder(
   formData: FormData
 ): Promise<{ success: boolean; error?: string }> {
+  const user = await requireAuth();
+  const supabase = await createClient();
+
   const equipment_id = String(formData.get('equipment_id') ?? '').trim();
   const customer_name = String(formData.get('customer_name') ?? '').trim();
   const customer_phone = String(formData.get('customer_phone') ?? '').trim();
@@ -197,6 +289,14 @@ export async function createManualOrder(
     return { success: false, error: '请完整填写订单信息' };
   }
 
+  const conflict = await checkEquipmentConflict(supabase, equipment_id, start_date, end_date);
+  if (conflict.hasConflict && conflict.conflictingOrder) {
+    return {
+      success: false,
+      error: `设备排期冲突：与「${conflict.conflictingOrder.customer_name}」的订单（${conflict.conflictingOrder.start_date} ~ ${conflict.conflictingOrder.end_date}）重叠。上一单结束后需强制休息 2 天，请调整租期。`,
+    };
+  }
+
   const { error } = await supabase.from('orders').insert({
     equipment_id,
     customer_name,
@@ -208,6 +308,7 @@ export async function createManualOrder(
     total_price,
     deposit_paid: 0,
     status: 'pending_payment',
+    user_id: user.id,
   });
 
   if (error) {
@@ -223,16 +324,19 @@ export async function createManualOrder(
 export async function bulkCreateOrders(
   records: Array<Record<string, unknown>>
 ): Promise<{ success: boolean; error?: string }> {
+  const user = await requireAuth();
+
   if (!Array.isArray(records) || records.length === 0) {
     return { success: false, error: '没有可导入的订单数据' };
   }
 
-  const payload = records.map((record) => ({
-    ...record,
-    status: 'confirmed',
-  }));
+  const payload = records.map((record) => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { issues, rowNumber, ...clean } = record;
+    return { ...clean, status: 'confirmed', user_id: user.id };
+  });
 
-  const { error } = await supabase.from('orders').insert(payload);
+  const { error } = await supabaseAdmin.from('orders').insert(payload);
 
   if (error) {
     console.error('Error bulk creating orders:', error);
@@ -249,20 +353,32 @@ export async function processExternalOrder(
   orderId: string,
   formData: FormData
 ): Promise<{ success: boolean; error?: string }> {
+  const supabase = await createClient();
+
   const equipment_id = String(formData.get('equipment_id') ?? '').trim();
+  const shipping_address = String(formData.get('shipping_address') ?? '').trim();
   const start_date = String(formData.get('start_date') ?? '').trim();
   const end_date = String(formData.get('end_date') ?? '').trim();
   const deposit_exemption = String(formData.get('deposit_exemption') ?? '').trim();
   const shipping_method = String(formData.get('shipping_method') ?? '').trim();
 
-  if (!equipment_id || !start_date || !end_date || !deposit_exemption || !shipping_method) {
+  if (!equipment_id || !shipping_address || !start_date || !end_date || !deposit_exemption || !shipping_method) {
     return { success: false, error: '请完整填写接单信息' };
+  }
+
+  const conflict = await checkEquipmentConflict(supabase, equipment_id, start_date, end_date, orderId);
+  if (conflict.hasConflict && conflict.conflictingOrder) {
+    return {
+      success: false,
+      error: `设备排期冲突：与「${conflict.conflictingOrder.customer_name}」的订单（${conflict.conflictingOrder.start_date} ~ ${conflict.conflictingOrder.end_date}）重叠。上一单结束后需强制休息 2 天，请调整租期。`,
+    };
   }
 
   const { error } = await supabase
     .from('orders')
     .update({
       equipment_id,
+      shipping_address,
       start_date,
       end_date,
       deposit_exemption,
@@ -295,7 +411,7 @@ export async function processExternalOrder(
 export async function deleteOrder(
   orderId: string
 ): Promise<{ success: boolean; error?: string }> {
-  const { error } = await supabase
+  const { error } = await supabaseAdmin
     .from('orders')
     .delete()
     .eq('id', orderId);
@@ -320,6 +436,9 @@ export async function updateOrderStatus(
   trackingNumber?: string,
   equipmentId?: string
 ): Promise<{ success: boolean; error?: string }> {
+  await requireAuth();
+  const supabase = await createClient();
+
   const updates: Record<string, unknown> = { status: newStatus };
   if (trackingNumber !== undefined) {
     updates.tracking_number = trackingNumber;
@@ -353,5 +472,34 @@ export async function updateOrderStatus(
 
   revalidatePath('/admin');
   revalidatePath('/admin/inventory');
+  return { success: true };
+}
+
+export async function updateOrderFields(
+  orderId: string,
+  fields: {
+    customer_name?: string;
+    customer_phone?: string;
+    shipping_address?: string;
+    equipment_id?: string;
+    start_date?: string;
+    end_date?: string;
+    notes?: string;
+  }
+): Promise<{ success: boolean; error?: string }> {
+  await requireAuth();
+  const { error } = await supabaseAdmin
+    .from('orders')
+    .update(fields)
+    .eq('id', orderId);
+
+  if (error) {
+    console.error('Error updating order fields:', error);
+    return { success: false, error: error.message };
+  }
+
+  revalidatePath('/admin');
+  revalidatePath('/admin/inventory');
+  revalidatePath('/admin/orders');
   return { success: true };
 }

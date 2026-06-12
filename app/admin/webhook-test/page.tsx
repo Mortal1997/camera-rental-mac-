@@ -1,102 +1,94 @@
 'use client';
 
-import { useState, useTransition } from 'react';
-import { CheckCircle2, Copy, RefreshCw, Rocket, ShieldAlert, XCircle } from 'lucide-react';
-import { PrimaryButton, SecondaryButton, SelectInput, SurfaceCard, TextInput, FormField, PageHeader, StatBadge } from '../components/ui';
+import { useMemo, useState, useTransition } from 'react';
+import {
+  CheckCircle2,
+  Copy,
+  RefreshCw,
+  Rocket,
+  ShieldAlert,
+  XCircle,
+} from 'lucide-react';
+import { FilterPanel, FormField, PageHeader, PrimaryButton, SecondaryButton, SelectInput, StatBadge, SurfaceCard, TextInput } from '../components/ui';
 
 type WebhookPreset = 'minimal' | 'full' | 'duplicate';
 
-const platformOptions = ['京东', '淘宝租赁', '支付宝租机', '微信小程序', '抖音租赁', '自营'];
-
-const shippingMethodOptions = ['邮寄', '自提', '闪送'];
-
-const depositExemptionOptions = ['芝麻信用', '押金双免', '支付押金', '熟人免押'];
-
-function today(offset = 0) {
-  const d = new Date();
-  d.setDate(d.getDate() + offset);
-  return d.toISOString().slice(0, 10);
-}
-
-function randomPhone() {
-  return `1${3 + Math.floor(Math.random() * 6)}${String(Math.floor(Math.random() * 1e8)).padStart(8, '0')}`;
-}
-
-const PRESET_PAYLOADS: Record<WebhookPreset, Record<string, string>> = {
-  minimal: {
-    platform_source: '京东',
-    customer_name: '测试用户',
-    customer_phone: randomPhone(),
-  },
-  full: {
-    platform_source: '京东',
-    customer_name: '李明',
-    customer_phone: randomPhone(),
-    shipping_address: '北京市朝阳区建国路88号SOHO现代城A座1201',
-    expected_equipment_model: 'Sony A7M4',
-    start_date: today(2),
-    end_date: today(5),
-    total_price: '599',
-    deposit_paid: '0',
-    shipping_method: '邮寄',
-    deposit_exemption: '芝麻信用',
-    external_order_id: `TEST-${Date.now()}`,
-    metadata: '{"shop_name":"京东旗舰店","remark":"客户加急发货"}',
-  },
-  duplicate: {
-    platform_source: '京东',
-    customer_name: '李明',
-    customer_phone: randomPhone(),
-    shipping_address: '北京市朝阳区建国路88号SOHO现代城A座1201',
-    expected_equipment_model: 'Sony A7M4',
-    start_date: today(2),
-    end_date: today(5),
-    total_price: '599',
-    deposit_paid: '0',
-    shipping_method: '邮寄',
-    deposit_exemption: '芝麻信用',
-    external_order_id: 'TEST-DUPLICATE-001',
-    metadata: '{"shop_name":"京东旗舰店","remark":"重复推送测试"}',
-  },
+type FieldDef = {
+  key: string;
+  label: string;
+  type: 'text' | 'number' | 'date' | 'textarea' | 'select';
+  required?: boolean;
+  options?: string[];
 };
 
-const FIELD_GROUPS: { label: string; fields: FieldDef[] }[] = [
+const FIELD_GROUPS: Array<{ label: string; fields: FieldDef[] }> = [
   {
-    label: '必填字段',
+    label: '基础信息',
     fields: [
-      { key: 'platform_source', label: '平台来源', type: 'select', options: platformOptions, required: true },
+      { key: 'platform_source', label: '平台来源', type: 'text', required: true },
       { key: 'customer_name', label: '客户姓名', type: 'text', required: true },
-      { key: 'customer_phone', label: '联系电话', type: 'tel', required: true },
+      { key: 'customer_phone', label: '联系电话', type: 'text', required: true },
+      { key: 'external_order_id', label: '外部订单号', type: 'text' },
     ],
   },
   {
-    label: '订单信息',
+    label: '租赁信息',
     fields: [
-      { key: 'external_order_id', label: '外部平台订单号', type: 'text' },
-      { key: 'start_date', label: '租用开始日期', type: 'date' },
-      { key: 'end_date', label: '租用结束日期', type: 'date' },
-      { key: 'total_price', label: '总租金', type: 'number' },
-      { key: 'deposit_paid', label: '已收押金', type: 'number' },
-    ],
-  },
-  {
-    label: '设备与发货',
-    fields: [
-      { key: 'expected_equipment_model', label: '期望设备型号', type: 'text' },
+      { key: 'expected_equipment_model', label: '设备型号', type: 'text' },
       { key: 'shipping_address', label: '收货地址', type: 'text' },
-      { key: 'shipping_method', label: '发货方式', type: 'select', options: shippingMethodOptions },
-      { key: 'deposit_exemption', label: '免押方式', type: 'select', options: depositExemptionOptions },
+      { key: 'start_date', label: '开始日期', type: 'date' },
+      { key: 'end_date', label: '结束日期', type: 'date' },
+      { key: 'shipping_method', label: '配送方式', type: 'select', options: ['self_pickup', 'sf_express', 'same_city'] },
+      { key: 'deposit_exemption', label: '免押方式', type: 'select', options: ['芝麻信用', '小白信用', '企业担保'] },
     ],
   },
   {
-    label: '扩展数据',
+    label: '金额与扩展',
     fields: [
-      { key: 'metadata', label: '元数据 (JSON)', type: 'textarea' },
+      { key: 'total_price', label: '订单金额', type: 'number' },
+      { key: 'deposit_paid', label: '已付押金', type: 'number' },
+      { key: 'metadata', label: 'metadata(JSON)', type: 'textarea' },
     ],
   },
 ];
 
-type FieldDef = { key: string; label: string; type: string; required?: boolean; options?: string[] };
+const PRESET_PAYLOADS: Record<WebhookPreset, Record<string, string>> = {
+  minimal: {
+    platform_source: 'xiaohongshu',
+    customer_name: '张三',
+    customer_phone: '13800138000',
+  },
+  full: {
+    platform_source: 'xiaohongshu',
+    customer_name: '张三',
+    customer_phone: '13800138000',
+    external_order_id: 'xh-test-order-001',
+    expected_equipment_model: 'Canon EOS R5',
+    shipping_address: '上海市静安区南京西路 100 号',
+    start_date: '2026-06-10',
+    end_date: '2026-06-13',
+    total_price: '1299',
+    deposit_paid: '500',
+    shipping_method: 'sf_express',
+    deposit_exemption: '芝麻信用',
+    metadata: JSON.stringify({ note: '测试订单', source: 'webhook-debug' }, null, 2),
+  },
+  duplicate: {
+    platform_source: 'xiaohongshu',
+    customer_name: '张三',
+    customer_phone: '13800138000',
+    external_order_id: 'xh-test-order-001',
+    expected_equipment_model: 'Canon EOS R5',
+    shipping_address: '上海市静安区南京西路 100 号',
+    start_date: '2026-06-10',
+    end_date: '2026-06-13',
+    total_price: '1299',
+    deposit_paid: '500',
+    shipping_method: 'sf_express',
+    deposit_exemption: '芝麻信用',
+    metadata: JSON.stringify({ note: '重复推送测试', source: 'webhook-debug' }, null, 2),
+  },
+};
 
 function FieldInput({ field, value, onChange }: { field: FieldDef; value: string; onChange: (v: string) => void }) {
   if (field.type === 'select') {
@@ -115,14 +107,12 @@ function FieldInput({ field, value, onChange }: { field: FieldDef; value: string
         value={value}
         onChange={(e) => onChange(e.target.value)}
         rows={3}
-        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm transition-all outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-900/10 font-mono"
+        className="w-full rounded-2xl border border-black/[0.05] bg-[var(--bg-card)] px-4 py-3 text-sm font-mono text-[var(--text-main)] shadow-[inset_2px_2px_8px_rgba(220,220,228,0.38),inset_-2px_-2px_8px_rgba(255,255,255,0.92)] transition-all outline-none placeholder:text-[var(--text-muted)] focus:border-[rgba(255,107,74,0.18)] focus:ring-2 focus:ring-[rgba(255,107,74,0.12)]"
         placeholder='{"key": "value"}'
       />
     );
   }
-  return (
-    <TextInput type={field.type} value={value} onChange={(e) => onChange(e.target.value)} />
-  );
+  return <TextInput type={field.type} value={value} onChange={(e) => onChange(e.target.value)} />;
 }
 
 type ResponseState = {
@@ -134,17 +124,21 @@ type ResponseState = {
 };
 
 export default function WebhookTestPage() {
-  const [formValues, setFormValues] = useState<Record<string, string>>({});
+  const [formValues, setFormValues] = useState<Record<string, string>>(() => ({ ...PRESET_PAYLOADS.full }));
   const [authToken, setAuthToken] = useState('');
   const [preset, setPreset] = useState<WebhookPreset>('full');
   const [response, setResponse] = useState<ResponseState>({ status: null, statusText: '', body: '', duration: null, duplicated: null });
   const [isPending, startTransition] = useTransition();
   const [copied, setCopied] = useState(false);
 
+  const endpoint = useMemo(() => {
+    if (typeof window === 'undefined') return '/api/webhooks/orders';
+    return `${window.location.origin}/api/webhooks/orders`;
+  }, []);
+
   const applyPreset = (p: WebhookPreset) => {
     setPreset(p);
-    const payload = PRESET_PAYLOADS[p];
-    setFormValues({ ...payload });
+    setFormValues({ ...PRESET_PAYLOADS[p] });
   };
 
   const updateField = (key: string, value: string) => {
@@ -162,7 +156,7 @@ export default function WebhookTestPage() {
         try {
           payload[key] = JSON.parse(value);
         } catch {
-          // skip invalid JSON
+          // ignore invalid json
         }
       } else {
         payload[key] = value;
@@ -179,7 +173,7 @@ export default function WebhookTestPage() {
         'Content-Type': 'application/json',
       };
       if (authToken.trim()) {
-        headers['Authorization'] = `Bearer ${authToken.trim()}`;
+        headers.Authorization = `Bearer ${authToken.trim()}`;
       }
 
       const start = Date.now();
@@ -192,7 +186,11 @@ export default function WebhookTestPage() {
         const elapsed = Date.now() - start;
         const text = await res.text();
         let json: Record<string, unknown> = {};
-        try { json = JSON.parse(text); } catch { /* use raw */ }
+        try {
+          json = JSON.parse(text);
+        } catch {
+          json = { raw: text };
+        }
 
         setResponse({
           status: res.status,
@@ -215,7 +213,7 @@ export default function WebhookTestPage() {
   };
 
   const handleCopyEndpoint = () => {
-    navigator.clipboard.writeText(`${window.location.origin}/api/webhooks/orders`).then(() => {
+    navigator.clipboard.writeText(endpoint).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
@@ -223,10 +221,10 @@ export default function WebhookTestPage() {
 
   const statusBadge = response.status
     ? response.status >= 200 && response.status < 300
-      ? { tone: 'emerald' as const, label: `${response.status} ${response.statusText}`, icon: CheckCircle2, iconClass: 'text-emerald-500' }
+      ? { tone: 'emerald' as const, label: `${response.status} ${response.statusText}`, icon: CheckCircle2, iconClass: 'text-[var(--accent-primary)]' }
       : response.status === 0
-      ? { tone: 'red' as const, label: 'Network Error', icon: XCircle, iconClass: 'text-red-500' }
-      : { tone: 'red' as const, label: `${response.status} ${response.statusText}`, icon: XCircle, iconClass: 'text-red-500' }
+        ? { tone: 'red' as const, label: 'Network Error', icon: XCircle, iconClass: 'text-[var(--accent-primary)]' }
+        : { tone: 'red' as const, label: `${response.status} ${response.statusText}`, icon: XCircle, iconClass: 'text-[var(--accent-primary)]' }
     : null;
 
   const isValid = Boolean(formValues.platform_source && formValues.customer_name && formValues.customer_phone);
@@ -240,39 +238,37 @@ export default function WebhookTestPage() {
       />
 
       <div className="grid gap-6 lg:grid-cols-5">
-        {/* Left: Form */}
-        <div className="lg:col-span-3 space-y-5">
+        <div className="space-y-5 lg:col-span-3">
           <SurfaceCard>
-            {/* Endpoint */}
             <div className="mb-5">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">接收地址</p>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--text-muted)]">接收地址</p>
               <div className="flex items-center gap-2">
-                <code className="flex-1 truncate rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-mono text-slate-700">
-                  {typeof window !== 'undefined' ? `${window.location.origin}/api/webhooks/orders` : '/api/webhooks/orders'}
+                <code className="flex-1 truncate rounded-xl border border-black/[0.05] bg-[rgba(245,245,248,0.92)] px-4 py-2.5 text-sm font-mono text-[var(--text-main)]">
+                  {endpoint}
                 </code>
                 <SecondaryButton onClick={handleCopyEndpoint}>
-                  {copied ? <CheckCircle2 className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
+                  {copied ? <CheckCircle2 className="h-4 w-4 text-[var(--accent-primary)]" /> : <Copy className="h-4 w-4" />}
                   {copied ? '已复制' : '复制'}
                 </SecondaryButton>
               </div>
             </div>
 
-            {/* Auth */}
-            <div className="mb-5 rounded-2xl border border-slate-100 bg-slate-50 p-4">
-              <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                <ShieldAlert className="h-3.5 w-3.5" />认证密钥（可选）
-              </p>
-              <TextInput
-                value={authToken}
-                onChange={(e) => setAuthToken(e.target.value)}
-                placeholder="ORDER_WEBHOOK_SECRET 对应的值，留空则跳过鉴权"
-              />
-              <p className="mt-1.5 text-xs text-slate-400">支持 Bearer Token 或 x-webhook-secret Header</p>
-            </div>
+            <FilterPanel className="mb-5">
+              <div>
+                <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--text-muted)]">
+                  <ShieldAlert className="h-3.5 w-3.5" />认证密钥（可选）
+                </p>
+                <TextInput
+                  value={authToken}
+                  onChange={(e) => setAuthToken(e.target.value)}
+                  placeholder="ORDER_WEBHOOK_SECRET 对应的值，留空则跳过鉴权"
+                />
+                <p className="mt-1.5 text-xs text-[var(--text-muted)]">支持 Bearer Token 或 x-webhook-secret Header</p>
+              </div>
+            </FilterPanel>
 
-            {/* Presets */}
             <div className="mb-5">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">预设 Payload</p>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--text-muted)]">预设 Payload</p>
               <div className="flex flex-wrap gap-2">
                 {([
                   ['minimal', '最小集（仅必填）'],
@@ -284,27 +280,26 @@ export default function WebhookTestPage() {
                     onClick={() => applyPreset(key)}
                     className={`rounded-xl px-4 py-2 text-sm font-medium transition-all ${
                       preset === key
-                        ? 'bg-indigo-600 text-white shadow-sm'
-                        : 'border border-slate-200 text-slate-600 hover:bg-slate-50'
+                        ? 'bg-[var(--accent-primary)] text-white shadow-[0_10px_20px_rgba(255,107,74,0.22)]'
+                        : 'border border-black/[0.05] bg-[var(--bg-card)] text-[var(--text-muted)] shadow-[4px_4px_14px_rgba(208,208,216,0.18),-4px_-4px_14px_rgba(255,255,255,0.9)] hover:text-[var(--accent-primary)]'
                     }`}
                   >
                     {label}
                   </button>
                 ))}
               </div>
-              <p className="mt-2 text-xs text-slate-400">
+              <p className="mt-2 text-xs text-[var(--text-muted)]">
                 {preset === 'duplicate'
-                  ? '将推送与"完整数据"相同 external_order_id，验证去重逻辑'
+                  ? '将推送与“完整数据”相同的 external_order_id，用于验证去重逻辑'
                   : preset === 'full'
-                  ? '填充所有字段，可直接提交测试'
-                  : '只填必填字段，快速验证基础接单'}
+                    ? '填充所有字段，可直接提交测试'
+                    : '只填必填字段，快速验证基础接单'}
               </p>
             </div>
 
-            {/* Field groups */}
             {FIELD_GROUPS.map((group) => (
-              <div key={group.label} className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
-                <p className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">{group.label}</p>
+              <div key={group.label} className="mb-5 rounded-[22px] border border-black/[0.04] bg-white/72 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] last:mb-0">
+                <p className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--text-muted)]">{group.label}</p>
                 <div className="grid gap-4 md:grid-cols-2">
                   {group.fields.map((field) => (
                     <FormField
@@ -312,19 +307,15 @@ export default function WebhookTestPage() {
                       label={field.label + (field.required ? ' *' : '')}
                       className={field.type === 'textarea' ? 'md:col-span-2' : undefined}
                     >
-                      <FieldInput
-                        field={field}
-                        value={formValues[field.key] ?? ''}
-                        onChange={(v) => updateField(field.key, v)}
-                      />
+                      <FieldInput field={field} value={formValues[field.key] ?? ''} onChange={(v) => updateField(field.key, v)} />
                     </FormField>
                   ))}
                 </div>
               </div>
             ))}
 
-            <div className="mt-5 flex items-center justify-between">
-              <p className="text-xs text-slate-400">* 为必填字段，至少填写平台来源、客户姓名、联系电话</p>
+            <div className="mt-5 flex items-center justify-between gap-4">
+              <p className="text-xs text-[var(--text-muted)]">* 为必填字段，至少填写平台来源、客户姓名、联系电话</p>
               <PrimaryButton onClick={handleSubmit} disabled={isPending || !isValid}>
                 {isPending ? (
                   <><RefreshCw className="h-4 w-4 animate-spin" />发送中...</>
@@ -336,19 +327,18 @@ export default function WebhookTestPage() {
           </SurfaceCard>
         </div>
 
-        {/* Right: Response */}
-        <div className="lg:col-span-2 space-y-4">
+        <div className="space-y-4 lg:col-span-2">
           <SurfaceCard>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">响应结果</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--text-muted)]">响应结果</p>
 
             {!response.status && !isPending && (
-              <div className="mt-6 rounded-xl border border-dashed border-slate-200 bg-slate-50 py-10 text-center text-sm text-slate-400">
+              <div className="mt-6 rounded-xl border border-dashed border-black/[0.06] bg-[rgba(245,245,248,0.92)] py-10 text-center text-sm text-[var(--text-muted)]">
                 点击「发送 Webhook」后，响应将显示在这里
               </div>
             )}
 
             {isPending && (
-              <div className="mt-6 flex items-center justify-center gap-3 py-10 text-sm text-slate-400">
+              <div className="mt-6 flex items-center justify-center gap-3 py-10 text-sm text-[var(--text-muted)]">
                 <RefreshCw className="h-5 w-5 animate-spin" />
                 等待响应...
               </div>
@@ -356,36 +346,31 @@ export default function WebhookTestPage() {
 
             {response.status !== null && !isPending && (
               <div className="mt-4 space-y-4">
-                {/* Status line */}
                 <div className="flex flex-wrap items-center gap-3">
-                  {statusBadge && (
+                  {statusBadge ? (
                     <StatBadge tone={statusBadge.tone}>
                       <statusBadge.icon className={statusBadge.iconClass + ' h-3.5 w-3.5'} />
                       {statusBadge.label}
                     </StatBadge>
-                  )}
-                  {response.duration !== null && (
-                    <span className="text-xs text-slate-400">{response.duration}ms</span>
-                  )}
-                  {response.duplicated !== null && (
+                  ) : null}
+                  {response.duration !== null ? <span className="text-xs text-[var(--text-muted)]">{response.duration}ms</span> : null}
+                  {response.duplicated !== null ? (
                     <StatBadge tone={response.duplicated ? 'amber' : 'emerald'}>
                       {response.duplicated ? '命中重复单' : '新建订单'}
                     </StatBadge>
-                  )}
+                  ) : null}
                 </div>
 
-                {/* Duplicated warning */}
-                {response.duplicated && (
-                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                {response.duplicated ? (
+                  <div className="rounded-xl border border-transparent bg-[rgba(255,107,74,0.1)] px-4 py-3 text-sm text-[var(--accent-primary)]">
                     <p className="font-semibold">重复订单已拦截</p>
-                    <p className="mt-1 text-xs text-amber-600">该 external_order_id 在同一平台已存在，订单未被重复写入。</p>
+                    <p className="mt-1 text-xs">该 external_order_id 在同一平台已存在，订单未被重复写入。</p>
                   </div>
-                )}
+                ) : null}
 
-                {/* Response body */}
                 <div>
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">响应体</p>
-                  <pre className="max-h-80 overflow-auto rounded-xl border border-slate-200 bg-slate-950 px-4 py-3 text-xs text-emerald-400 font-mono whitespace-pre-wrap break-all">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--text-muted)]">响应体</p>
+                  <pre className="max-h-80 overflow-auto rounded-xl border border-black/[0.05] bg-[#1f2026] px-4 py-3 text-xs font-mono text-[#ff9a82] whitespace-pre-wrap break-all">
                     {response.body || '(empty)'}
                   </pre>
                 </div>
@@ -393,23 +378,22 @@ export default function WebhookTestPage() {
             )}
           </SurfaceCard>
 
-          {/* Quick reference */}
           <SurfaceCard>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">字段参考</p>
-            <div className="mt-3 space-y-1.5 text-xs text-slate-500 font-mono">
-              <p><span className="text-slate-700">platform_source</span> <span className="text-slate-400">string *</span></p>
-              <p><span className="text-slate-700">customer_name</span> <span className="text-slate-400">string *</span></p>
-              <p><span className="text-slate-700">customer_phone</span> <span className="text-slate-400">string *</span></p>
-              <p><span className="text-slate-700">external_order_id</span> <span className="text-slate-400">string</span></p>
-              <p><span className="text-slate-700">expected_equipment_model</span> <span className="text-slate-400">string</span></p>
-              <p><span className="text-slate-700">shipping_address</span> <span className="text-slate-400">string</span></p>
-              <p><span className="text-slate-700">start_date</span> <span className="text-slate-400">string</span></p>
-              <p><span className="text-slate-700">end_date</span> <span className="text-slate-400">string</span></p>
-              <p><span className="text-slate-700">total_price</span> <span className="text-slate-400">number</span></p>
-              <p><span className="text-slate-700">deposit_paid</span> <span className="text-slate-400">number</span></p>
-              <p><span className="text-slate-700">shipping_method</span> <span className="text-slate-400">string</span></p>
-              <p><span className="text-slate-700">deposit_exemption</span> <span className="text-slate-400">string</span></p>
-              <p><span className="text-slate-700">metadata</span> <span className="text-slate-400">object</span></p>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--text-muted)]">字段参考</p>
+            <div className="mt-3 space-y-1.5 font-mono text-xs text-[var(--text-muted)]">
+              <p><span className="text-[var(--text-main)]">platform_source</span> <span>string *</span></p>
+              <p><span className="text-[var(--text-main)]">customer_name</span> <span>string *</span></p>
+              <p><span className="text-[var(--text-main)]">customer_phone</span> <span>string *</span></p>
+              <p><span className="text-[var(--text-main)]">external_order_id</span> <span>string</span></p>
+              <p><span className="text-[var(--text-main)]">expected_equipment_model</span> <span>string</span></p>
+              <p><span className="text-[var(--text-main)]">shipping_address</span> <span>string</span></p>
+              <p><span className="text-[var(--text-main)]">start_date</span> <span>string</span></p>
+              <p><span className="text-[var(--text-main)]">end_date</span> <span>string</span></p>
+              <p><span className="text-[var(--text-main)]">total_price</span> <span>number</span></p>
+              <p><span className="text-[var(--text-main)]">deposit_paid</span> <span>number</span></p>
+              <p><span className="text-[var(--text-main)]">shipping_method</span> <span>string</span></p>
+              <p><span className="text-[var(--text-main)]">deposit_exemption</span> <span>string</span></p>
+              <p><span className="text-[var(--text-main)]">metadata</span> <span>object</span></p>
             </div>
           </SurfaceCard>
         </div>

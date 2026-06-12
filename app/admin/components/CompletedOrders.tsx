@@ -5,6 +5,7 @@ import { Trash2 } from 'lucide-react';
 import { deleteOrder } from '../../actions/admin-actions';
 import type { Order } from '../../actions/types';
 import { EmptyState, SectionHeader, SurfaceCard, TableHead, TableShell, Td, Th, Tr } from './ui';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 interface CompletedOrdersProps {
   orders: Order[];
@@ -31,9 +32,12 @@ export default function CompletedOrders({ orders }: CompletedOrdersProps) {
   const [displayOrders, setDisplayOrders] = useState(filtered);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [deleteDialogOrderId, setDeleteDialogOrderId] = useState<string | null>(null);
 
-  const handleDelete = (orderId: string) => {
-    if (!window.confirm('确定要永久删除这个订单吗？此操作无法撤销。')) return;
+  const confirmDelete = () => {
+    if (!deleteDialogOrderId) return;
+    const orderId = deleteDialogOrderId;
+    setDeleteDialogOrderId(null);
 
     setError(null);
     startTransition(async () => {
@@ -48,6 +52,7 @@ export default function CompletedOrders({ orders }: CompletedOrdersProps) {
   };
 
   return (
+    <>
     <SurfaceCard>
       <SectionHeader title="已完成订单" description="所有已归还并结清的订单记录。" meta={`${displayOrders.length} 单`} />
 
@@ -74,7 +79,14 @@ export default function CompletedOrders({ orders }: CompletedOrdersProps) {
             <tbody>
               {displayOrders.map((order) => (
                 <Tr key={order.id}>
-                  <Td className="font-medium text-slate-900">{order.equipment?.name ?? '—'}</Td>
+                    <Td>
+                      <div className="space-y-0.5">
+                        <p className="font-medium text-slate-900">{order.equipment?.name ?? '—'}</p>
+                        {order.equipment?.serial_number && (
+                          <p className="font-mono text-xs text-slate-400">{order.equipment.serial_number}</p>
+                        )}
+                      </div>
+                    </Td>
                   <Td>
                     <div className="space-y-1">
                       <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
@@ -103,7 +115,7 @@ export default function CompletedOrders({ orders }: CompletedOrdersProps) {
                     <button
                       type="button"
                       className={dangerButtonClassName}
-                      onClick={() => handleDelete(order.id)}
+                      onClick={() => setDeleteDialogOrderId(order.id)}
                       disabled={isPending}
                     >
                       <Trash2 className="h-4 w-4" />删除
@@ -116,5 +128,33 @@ export default function CompletedOrders({ orders }: CompletedOrdersProps) {
         )}
       </TableShell>
     </SurfaceCard>
+
+    <Dialog open={deleteDialogOrderId !== null} onOpenChange={(open) => !open && setDeleteDialogOrderId(null)}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>确认删除订单</DialogTitle>
+          <DialogDescription>确定要永久删除这个订单吗？此操作无法撤销。</DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <button
+            type="button"
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={() => setDeleteDialogOrderId(null)}
+            disabled={isPending}
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-red-50 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={() => void confirmDelete()}
+            disabled={isPending}
+          >
+            {isPending ? '删除中...' : '确认删除'}
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

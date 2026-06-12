@@ -13,6 +13,7 @@ export type Order = {
   id: string;
   equipment_id?: string;
   external_order_id?: string;
+  created_at?: string | null;
   start_date?: string | null;
   end_date?: string | null;
   total_price?: number | null;
@@ -26,6 +27,7 @@ export type Order = {
   platform_source?: string;
   shipping_method?: string;
   expected_equipment_model?: string;
+  notes?: string;
   equipment?: Equipment;
 };
 

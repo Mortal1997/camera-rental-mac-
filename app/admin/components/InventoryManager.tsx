@@ -6,6 +6,7 @@ import type { Equipment } from '../../actions/types';
 import { read, utils, writeFileXLSX } from 'xlsx';
 import { Boxes, Download, FileSpreadsheet, Plus, Trash2, Upload, Wrench } from 'lucide-react';
 import { DangerButton, EmptyState, FormField, Modal, PrimaryButton, SecondaryButton, SectionHeader, StatBadge, SurfaceCard, TableHead, TableShell, Td, TextInput, Th, Tr } from './ui';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 interface InventoryManagerProps {
   equipment: Equipment[];
@@ -132,6 +133,7 @@ export default function InventoryManager({ equipment }: InventoryManagerProps) {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const [deleteDialogEquipment, setDeleteDialogEquipment] = useState<Equipment | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const validPreviewRecords = previewRecords.filter((record) => record.issues.length === 0);
@@ -217,14 +219,20 @@ export default function InventoryManager({ equipment }: InventoryManagerProps) {
     });
   };
 
-  const handleDelete = (eq: Equipment) => {
-    if (!confirm(`确定要删除设备「${eq.name}」吗？此操作不可撤销。`)) return;
+  const confirmDelete = () => {
+    if (!deleteDialogEquipment) return;
+    const eq = deleteDialogEquipment;
+    setDeleteDialogEquipment(null);
+
+    setServerError(null);
     startTransition(async () => {
       const result = await deleteEquipment(eq.id);
-      if (result.success) {
-        setSuccessMsg(`「${eq.name}」已删除`);
-        setTimeout(() => setSuccessMsg(null), 3000);
+      if (!result.success) {
+        setServerError(result.error ?? '删除失败，请稍后重试');
+        return;
       }
+      setSuccessMsg(`「${eq.name}」已删除`);
+      setTimeout(() => setSuccessMsg(null), 3000);
     });
   };
 
@@ -279,8 +287,8 @@ export default function InventoryManager({ equipment }: InventoryManagerProps) {
   return (
     <>
       {successMsg && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-[24px] border border-emerald-200/75 bg-white/90 px-5 py-3.5 text-sm font-medium text-slate-700 shadow-[0_18px_48px_rgba(15,23,42,0.10)] backdrop-blur-xl">
-          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-400/85 text-white">
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl bg-white px-5 py-3.5 text-sm font-medium text-slate-900 shadow-lg">
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white">
             <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" className="h-3 w-3">
               <polyline points="2,6 5,9 10,3" />
             </svg>
@@ -289,7 +297,7 @@ export default function InventoryManager({ equipment }: InventoryManagerProps) {
         </div>
       )}
 
-      <SurfaceCard className="p-0">
+      <SurfaceCard className="overflow-hidden p-0">
         <div className="border-b border-slate-100 px-4 py-4 sm:px-6 sm:py-5">
           <SectionHeader
             title="设备列表"
@@ -317,7 +325,7 @@ export default function InventoryManager({ equipment }: InventoryManagerProps) {
             }
           />
           {previewError ? (
-            <div className="mt-4 rounded-[20px] border border-rose-200/80 bg-rose-50/80 px-4 py-3 text-sm text-rose-600">{previewError}</div>
+            <div className="mt-4 rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-600">{previewError}</div>
           ) : null}
         </div>
 
@@ -358,7 +366,7 @@ export default function InventoryManager({ equipment }: InventoryManagerProps) {
                             <SecondaryButton onClick={() => handleToggleStatus(eq)} disabled={isPending} className="text-xs !py-1.5">
                               <Wrench className="h-3 w-3" />{eq.status === 'available' ? '报修' : '恢复'}
                             </SecondaryButton>
-                            <DangerButton onClick={() => handleDelete(eq)} disabled={isPending} className="text-xs !py-1.5">
+                            <DangerButton onClick={() => setDeleteDialogEquipment(eq)} disabled={isPending} className="text-xs !py-1.5">
                               <Trash2 className="h-3 w-3" />删除
                             </DangerButton>
                           </div>
@@ -382,7 +390,7 @@ export default function InventoryManager({ equipment }: InventoryManagerProps) {
         footer={
           <div className="flex flex-wrap justify-end gap-3">
             {serverError && (
-              <div className="w-full rounded-[20px] border border-rose-200/80 bg-rose-50/80 px-4 py-3 text-sm text-rose-600">{serverError}</div>
+              <div className="w-full rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-600">{serverError}</div>
             )}
             <SecondaryButton onClick={closeModal} disabled={isPending}>取消</SecondaryButton>
             <PrimaryButton onClick={handleCreate} disabled={isPending}>{isPending ? '创建中...' : '确认创建'}</PrimaryButton>
@@ -459,7 +467,7 @@ export default function InventoryManager({ equipment }: InventoryManagerProps) {
         footer={
           <div className="flex flex-wrap justify-end gap-3">
             {previewError ? (
-              <div className="w-full rounded-[20px] border border-rose-200/80 bg-rose-50/80 px-4 py-3 text-sm text-rose-600">{previewError}</div>
+              <div className="w-full rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-600">{previewError}</div>
             ) : null}
             <SecondaryButton onClick={closePreviewModal} disabled={isPending}>取消</SecondaryButton>
             <PrimaryButton onClick={handleBulkImport} disabled={isPending || validPreviewRecords.length === 0}>
@@ -469,22 +477,22 @@ export default function InventoryManager({ equipment }: InventoryManagerProps) {
         }
       >
         <div className="grid gap-4 md:grid-cols-3">
-          <div className="rounded-[22px] border border-slate-200/70 bg-white/76 p-4">
+          <div className="rounded-2xl bg-slate-50 p-4">
             <p className="text-sm text-slate-500">总记录</p>
             <p className="mt-2 text-2xl font-semibold text-slate-900">{previewRecords.length}</p>
           </div>
-          <div className="rounded-[22px] border border-emerald-200/70 bg-emerald-50/72 p-4">
+          <div className="rounded-2xl bg-emerald-50 p-4">
             <p className="text-sm text-emerald-700">有效记录</p>
             <p className="mt-2 text-2xl font-semibold text-slate-900">{validPreviewRecords.length}</p>
           </div>
-          <div className="rounded-[22px] border border-amber-200/70 bg-amber-50/72 p-4">
+          <div className="rounded-2xl bg-amber-50 p-4">
             <p className="text-sm text-amber-700">无效记录</p>
             <p className="mt-2 text-2xl font-semibold text-slate-900">{invalidPreviewRecords.length}</p>
           </div>
         </div>
 
         {invalidPreviewRecords.length > 0 ? (
-          <div className="mt-4 rounded-[20px] border border-amber-200/80 bg-amber-50/80 px-4 py-3 text-sm text-amber-700">
+          <div className="mt-4 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-700">
             检测到 {invalidPreviewRecords.length} 条无效数据，提交时将自动跳过，仅导入有效行。
           </div>
         ) : null}
@@ -529,6 +537,33 @@ export default function InventoryManager({ equipment }: InventoryManagerProps) {
           </table>
         </TableShell>
       </Modal>
+
+      <Dialog open={deleteDialogEquipment !== null} onOpenChange={(open) => !open && setDeleteDialogEquipment(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>确认删除设备</DialogTitle>
+            <DialogDescription>确定要删除设备「{deleteDialogEquipment?.name}」吗？此操作不可撤销。</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              type="button"
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => setDeleteDialogEquipment(null)}
+              disabled={isPending}
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-red-50 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => void confirmDelete()}
+              disabled={isPending}
+            >
+              {isPending ? '删除中...' : '确认删除'}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

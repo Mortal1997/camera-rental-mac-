@@ -4,21 +4,33 @@ import DispatchConsole from '../../components/DispatchConsole';
 
 export const dynamic = 'force-dynamic';
 
-export default async function DispatchPage() {
+export default async function DispatchPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { data: ordersData, error: ordersError } = await supabase
     .from('orders')
     .select('*')
-    .eq('status', 'unprocessed')
-    .order('id', { ascending: false });
+    .is('equipment_id', null)
+    .in('status', ['unprocessed', 'pending_payment'])
+    .order('created_at', { ascending: false });
+
+  const resolvedSearchParams = (await searchParams) ?? {};
+  const highlightOrdersParam = Array.isArray(resolvedSearchParams.highlightOrders)
+    ? resolvedSearchParams.highlightOrders[0]
+    : resolvedSearchParams.highlightOrders;
+  const highlightedExternalOrderIds = highlightOrdersParam
+    ? highlightOrdersParam.split(',').map((item) => item.trim()).filter(Boolean)
+    : [];
 
   if (ordersError) {
-    throw new Error('Failed to fetch unprocessed orders');
+    throw new Error('Failed to fetch dispatch orders');
   }
 
   const { data: equipmentData, error: equipmentError } = await supabase
     .from('equipment')
     .select('*')
-    .in('status', ['available', 'returned'])
     .order('name', { ascending: true });
 
   if (equipmentError) {
@@ -27,6 +39,7 @@ export default async function DispatchPage() {
 
   const orders = (ordersData ?? []) as Order[];
   const equipmentList = (equipmentData ?? []) as Equipment[];
+  const dispatchConsoleKey = orders.map((order) => `${order.id}:${order.status}:${order.equipment_id ?? 'unassigned'}`).join('|');
 
-  return <DispatchConsole orders={orders} equipmentList={equipmentList} />;
+  return <DispatchConsole key={dispatchConsoleKey} orders={orders} equipmentList={equipmentList} highlightedExternalOrderIds={highlightedExternalOrderIds} />;
 }

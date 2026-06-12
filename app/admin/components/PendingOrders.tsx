@@ -1,11 +1,18 @@
 'use client';
 
+import { format } from 'date-fns';
+import { zhCN } from 'date-fns/locale';
 import { useMemo, useRef, useState, useTransition } from 'react';
-import { bulkCreateOrders, createManualOrder, deleteOrder, updateOrderStatus } from '../../actions/admin-actions';
+import { type DateRange } from 'react-day-picker';
+import { bulkCreateOrders, createManualOrder, deleteOrder, updateOrderFields, updateOrderStatus } from '../../actions/admin-actions';
 import type { Equipment, Order } from '../../actions/types';
 import { read, utils, writeFileXLSX } from 'xlsx';
-import { Download, FileSpreadsheet, Package, Plus, Trash2, Truck, Upload } from 'lucide-react';
+import { Download, Edit2, FileSpreadsheet, MessageSquare, Package, Plus, Truck, Upload } from 'lucide-react';
 import { DangerButton, EmptyState, FormField, Modal, PrimaryButton, SecondaryButton, SectionHeader, SelectInput, StatBadge, SurfaceCard, TableHead, TableShell, Td, TextInput, Th, Tr } from './ui';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { DateRangePicker } from '@/components/ui/date-range-picker';
 
 interface PendingOrdersProps {
   orders: Order[];
@@ -33,8 +40,6 @@ const initialFormState = {
   customer_name: '',
   customer_phone: '',
   shipping_address: '',
-  start_date: '',
-  end_date: '',
   deposit_exemption: depositOptions[0],
   total_price: '',
 };
@@ -156,6 +161,23 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
   const [displayOrders, setDisplayOrders] = useState(filtered);
   const [trackingInputs, setTrackingInputs] = useState<Record<string, string>>({});
   const [isPending, startTransition] = useTransition();
+  const [sfLoadingStates, setSfLoadingStates] = useState<Record<string, boolean>>({});
+  const [sfToast, setSfToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [sfDialogOrderId, setSfDialogOrderId] = useState<string | null>(null);
+  const [sfPickupTime, setSfPickupTime] = useState('');
+  const [deleteDialogOrderId, setDeleteDialogOrderId] = useState<string | null>(null);
+  const [editDialogOrder, setEditDialogOrder] = useState<Order | null>(null);
+  const [editDateRange, setEditDateRange] = useState<DateRange | undefined>();
+  const [editFormValues, setEditFormValues] = useState({
+    customer_name: '',
+    customer_phone: '',
+    shipping_address: '',
+    equipment_id: '',
+    start_date: '',
+    end_date: '',
+    notes: '',
+  });
+  const [editFormError, setEditFormError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isImportPreviewOpen, setIsImportPreviewOpen] = useState(false);
   const [importPreviewRecords, setImportPreviewRecords] = useState<ImportedOrderRecord[]>([]);
@@ -163,6 +185,7 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
     ...initialFormState,
     equipment_id: equipmentList[0]?.id ?? '',
   }));
+  const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [formError, setFormError] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -174,6 +197,7 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
     setIsModalOpen(false);
     setFormError(null);
     setFormValues({ ...initialFormState, equipment_id: equipmentList[0]?.id ?? '' });
+    setDateRange(undefined);
   };
 
   const closeImportPreview = () => {
@@ -210,8 +234,31 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
     });
   };
 
-  const handleDelete = (orderId: string) => {
-    if (!window.confirm('确定要永久删除这个订单吗？此操作无法撤销。')) return;
+  const openEditDialog = (order: Order) => {
+    setEditDialogOrder(order);
+    setEditFormValues({
+      customer_name: order.customer_name ?? '',
+      customer_phone: order.customer_phone ?? '',
+      shipping_address: order.shipping_address ?? '',
+      equipment_id: order.equipment_id ?? '',
+      start_date: order.start_date ?? '',
+      end_date: order.end_date ?? '',
+      notes: order.notes ?? '',
+    });
+    setEditDateRange(
+      order.start_date && order.end_date
+        ? { from: new Date(order.start_date), to: new Date(order.end_date) }
+        : order.start_date
+        ? { from: new Date(order.start_date), to: new Date(order.start_date) }
+        : undefined
+    );
+    setEditFormError(null);
+  };
+
+  const confirmDelete = () => {
+    if (!deleteDialogOrderId) return;
+    const orderId = deleteDialogOrderId;
+    setDeleteDialogOrderId(null);
 
     setFormError(null);
     startTransition(async () => {
@@ -230,7 +277,101 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
     });
   };
 
+  const handleSaveEdit = () => {
+    if (!editDialogOrder) return;
+    const orderId = editDialogOrder.id;
+
+    const resolvedStart = editDateRange?.from ? format(editDateRange.from, 'yyyy-MM-dd') : undefined;
+    const resolvedEnd = editDateRange?.to ? format(editDateRange.to, 'yyyy-MM-dd') : undefined;
+
+    setEditFormError(null);
+    startTransition(async () => {
+      const result = await updateOrderFields(orderId, {
+        customer_name: editFormValues.customer_name.trim() || undefined,
+        customer_phone: editFormValues.customer_phone.trim() || undefined,
+        shipping_address: editFormValues.shipping_address.trim() || undefined,
+        equipment_id: editFormValues.equipment_id || undefined,
+        start_date: resolvedStart,
+        end_date: resolvedEnd,
+        notes: editFormValues.notes.trim() || undefined,
+      });
+
+      if (!result.success) {
+        setEditFormError(result.error ?? '保存失败，请稍后重试');
+        return;
+      }
+
+      setEditDialogOrder(null);
+      setDisplayOrders((current) =>
+        current.map((order) =>
+          order.id === orderId
+            ? {
+                ...order,
+                customer_name: editFormValues.customer_name || order.customer_name,
+                customer_phone: editFormValues.customer_phone || order.customer_phone,
+                shipping_address: editFormValues.shipping_address || order.shipping_address,
+                equipment_id: editFormValues.equipment_id || order.equipment_id,
+                start_date: resolvedStart || order.start_date,
+                end_date: resolvedEnd || order.end_date,
+                notes: editFormValues.notes.trim() || order.notes,
+              }
+            : order
+        )
+      );
+      setSfToast({ type: 'success', message: '订单信息已更新' });
+      setTimeout(() => setSfToast(null), 3000);
+    });
+  };
+
+  const showToast = (type: 'success' | 'error', message: string) => {
+    setSfToast({ type, message });
+    setTimeout(() => setSfToast(null), 4000);
+  };
+
+  const handleSFOrderConfirm = async () => {
+    if (!sfDialogOrderId) return;
+    const orderId = sfDialogOrderId;
+
+    setSfLoadingStates((prev) => ({ ...prev, [orderId]: true }));
+    setSfDialogOrderId(null);
+
+    try {
+      const res = await fetch('/api/shipping/sf-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId, pickupTime: sfPickupTime || undefined }),
+      });
+
+      const data = (await res.json()) as { success: boolean; tracking_number?: string; error?: string };
+
+      if (data.success && data.tracking_number) {
+        showToast('success', `顺丰下单成功，单号：${data.tracking_number}`);
+        setDisplayOrders((current) => current.filter((order) => order.id !== orderId));
+        setTrackingInputs((prev) => {
+          const next = { ...prev };
+          delete next[orderId];
+          return next;
+        });
+      } else {
+        showToast('error', data.error ?? '顺丰下单失败');
+      }
+    } catch {
+      showToast('error', '网络异常，请稍后重试');
+    } finally {
+      setSfLoadingStates((prev) => {
+        const next = { ...prev };
+        delete next[orderId];
+        return next;
+      });
+      setSfPickupTime('');
+    }
+  };
+
   const handleCreateOrder = () => {
+    if (!dateRange?.from || !dateRange?.to) {
+      setFormError('请选择完整的租赁期限');
+      return;
+    }
     setFormError(null);
     startTransition(async () => {
       const formData = new FormData();
@@ -238,8 +379,8 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
       formData.set('customer_name', formValues.customer_name);
       formData.set('customer_phone', formValues.customer_phone);
       formData.set('shipping_address', formValues.shipping_address);
-      formData.set('start_date', formValues.start_date);
-      formData.set('end_date', formValues.end_date);
+      formData.set('start_date', format(dateRange.from!, 'yyyy-MM-dd'));
+      formData.set('end_date', format(dateRange.to!, 'yyyy-MM-dd'));
       formData.set('deposit_exemption', formValues.deposit_exemption);
       formData.set('total_price', formValues.total_price);
 
@@ -354,7 +495,14 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
               <tbody>
                 {displayOrders.map((order) => (
                   <Tr key={order.id}>
-                    <Td className="font-medium text-slate-900">{order.equipment?.name ?? '—'}</Td>
+                    <Td>
+                      <div className="space-y-0.5">
+                        <p className="font-medium text-slate-900">{order.equipment?.name ?? '—'}</p>
+                        {order.equipment?.serial_number && (
+                          <p className="font-mono text-xs text-slate-400">{order.equipment.serial_number}</p>
+                        )}
+                      </div>
+                    </Td>
                     <Td>
                       <div className="space-y-1">
                         <StatBadge tone="slate">{order.platform_source || '手动录单'}</StatBadge>
@@ -373,12 +521,47 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
                           {order.shipping_address || '—'}
                         </p>
                         <p className="text-xs text-slate-400">{order.shipping_method || '待确认发货方式'}</p>
+                        {order.notes ? (
+                          <p className="mt-1 flex max-w-[200px] items-start gap-1 truncate text-xs text-slate-400" title={order.notes}>
+                            <MessageSquare className="mt-0.5 h-3 w-3 shrink-0 text-slate-300" />
+                            <span className="truncate italic">{order.notes}</span>
+                          </p>
+                        ) : null}
                       </div>
                     </Td>
                     <Td className="text-slate-600">{formatDateRange(order.start_date, order.end_date)}</Td>
                     <Td className="font-semibold text-slate-900">{formatCurrency(order.total_price)}</Td>
                     <Td>
                       <div className="flex flex-col gap-2">
+                        <div className="flex items-center gap-2">
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  onClick={() => openEditDialog(order)}
+                                  className="text-slate-500 hover:text-slate-900"
+                                >
+                                  <Edit2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent side="left">编辑订单信息</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                          <button
+                            type="button"
+                            onClick={() => { setSfDialogOrderId(order.id); setSfPickupTime(''); }}
+                            disabled={sfLoadingStates[order.id] || isPending}
+                            className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {sfLoadingStates[order.id] ? (
+                              <><svg className="h-3.5 w-3.5 animate-spin text-slate-400" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>下单中...</>
+                            ) : (
+                              <><Truck className="h-3.5 w-3.5 text-indigo-500" />顺丰一键下单</>
+                            )}
+                          </button>
+                        </div>
                         <TextInput
                           type="text"
                           placeholder="运单号"
@@ -390,9 +573,7 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
                           <PrimaryButton onClick={() => handleShip(order.id)} disabled={isPending} className="text-xs">
                             <Truck className="h-3.5 w-3.5" />发货
                           </PrimaryButton>
-                          <DangerButton onClick={() => handleDelete(order.id)} disabled={isPending}>
-                            <Trash2 className="h-4 w-4" />删除
-                          </DangerButton>
+                          <DangerButton onClick={() => setDeleteDialogOrderId(order.id)} disabled={isPending}>删除</DangerButton>
                         </div>
                       </div>
                     </Td>
@@ -475,19 +656,11 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
             />
           </FormField>
 
-          <FormField label="租用开始日期">
-            <TextInput
-              type="date"
-              value={formValues.start_date}
-              onChange={(e) => setFormValues((p) => ({ ...p, start_date: e.target.value }))}
-            />
-          </FormField>
-
-          <FormField label="租用结束日期">
-            <TextInput
-              type="date"
-              value={formValues.end_date}
-              onChange={(e) => setFormValues((p) => ({ ...p, end_date: e.target.value }))}
+          <FormField label="租赁期限" className="md:col-span-2">
+            <DateRangePicker
+              date={dateRange}
+              onDateChange={setDateRange}
+              placeholder="请选择租赁期限..."
             />
           </FormField>
 
@@ -582,6 +755,174 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
           </table>
         </TableShell>
       </Modal>
+
+      {sfToast && (
+        <div
+          className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl border px-5 py-4 text-sm font-medium shadow-xl transition-all ${
+            sfToast.type === 'success'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+              : 'border-rose-200 bg-rose-50 text-rose-700'
+          }`}
+        >
+          <span className={`inline-block h-2 w-2 rounded-full ${sfToast.type === 'success' ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+          {sfToast.message}
+        </div>
+      )}
+
+      <Modal
+        open={sfDialogOrderId !== null}
+        onClose={() => setSfDialogOrderId(null)}
+        eyebrow="Express"
+        icon={Truck}
+        title="预约顺丰上门时间"
+        maxWidthClassName="max-w-md"
+        footer={
+          <div className="flex flex-wrap justify-end gap-3">
+            <SecondaryButton onClick={() => setSfDialogOrderId(null)} disabled={sfLoadingStates[sfDialogOrderId ?? '']}>
+              取消
+            </SecondaryButton>
+            <PrimaryButton
+              onClick={() => void handleSFOrderConfirm()}
+              disabled={sfLoadingStates[sfDialogOrderId ?? '']}
+            >
+              {sfLoadingStates[sfDialogOrderId ?? ''] ? '下单中...' : '确认下单'}
+            </PrimaryButton>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">
+            选择希望顺丰快递员上门取件的时间。留空则默认立即呼叫快递员。
+          </p>
+          <input
+            type="datetime-local"
+            value={sfPickupTime}
+            onChange={(e) => setSfPickupTime(e.target.value)}
+            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 transition-colors focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100"
+          />
+          <div className="rounded-xl border border-amber-200/80 bg-amber-50/70 px-4 py-3 text-xs text-amber-700">
+            💡 留空则默认为立即呼叫快递员上门
+          </div>
+        </div>
+      </Modal>
+
+      <Dialog open={editDialogOrder !== null} onOpenChange={(open) => !open && setEditDialogOrder(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>编辑订单信息</DialogTitle>
+            <DialogDescription>
+              修改后将实时同步到数据库，设备更换会自动更新库存状态。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-5 py-2">
+            <FormField label="客户姓名">
+              <input
+                type="text"
+                value={editFormValues.customer_name}
+                onChange={(e) => setEditFormValues((p) => ({ ...p, customer_name: e.target.value }))}
+                placeholder="收货人姓名"
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 shadow-sm transition-all outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+              />
+            </FormField>
+            <FormField label="联系电话">
+              <input
+                type="tel"
+                value={editFormValues.customer_phone}
+                onChange={(e) => setEditFormValues((p) => ({ ...p, customer_phone: e.target.value }))}
+                placeholder="手机号码"
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 shadow-sm transition-all outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+              />
+            </FormField>
+            <FormField label="详细地址" className="md:col-span-2">
+              <textarea
+                value={editFormValues.shipping_address}
+                onChange={(e) => setEditFormValues((p) => ({ ...p, shipping_address: e.target.value }))}
+                placeholder="省/市/区 + 详细门牌号"
+                rows={3}
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 shadow-sm transition-all outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 resize-none"
+              />
+            </FormField>
+            <FormField label="分配设备" className="md:col-span-2">
+              <SelectInput
+                value={editFormValues.equipment_id}
+                onChange={(e) => setEditFormValues((p) => ({ ...p, equipment_id: e.target.value }))}
+              >
+                {equipmentList.map((eq) => (
+                  <option key={eq.id} value={eq.id}>
+                    {eq.name}{eq.serial_number ? ` · ${eq.serial_number}` : ''}
+                  </option>
+                ))}
+              </SelectInput>
+            </FormField>
+            <FormField label="租赁期限" className="md:col-span-2">
+              <DateRangePicker
+                date={editDateRange}
+                onDateChange={setEditDateRange}
+                placeholder="请选择租赁期限..."
+              />
+            </FormField>
+            <FormField label="订单备注">
+              <textarea
+                value={editFormValues.notes}
+                onChange={(e) => setEditFormValues((p) => ({ ...p, notes: e.target.value }))}
+                placeholder="填写客户特殊需求、注意事项等..."
+                rows={3}
+                className="w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 shadow-sm transition-all outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+              />
+            </FormField>
+          </div>
+          <DialogFooter>
+            {editFormError && (
+              <div className="w-full rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
+                {editFormError}
+              </div>
+            )}
+            <button
+              type="button"
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => setEditDialogOrder(null)}
+              disabled={isPending}
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => void handleSaveEdit()}
+              disabled={isPending}
+            >
+              {isPending ? '保存中...' : '保存修改'}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteDialogOrderId !== null} onOpenChange={(open) => !open && setDeleteDialogOrderId(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>确认删除订单</DialogTitle>
+            <DialogDescription>确定要永久删除这个订单吗？此操作无法撤销。</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              type="button"
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => setDeleteDialogOrderId(null)}
+              disabled={isPending}
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-red-50 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => void confirmDelete()}
+              disabled={isPending}
+            >
+              {isPending ? '删除中...' : '确认删除'}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

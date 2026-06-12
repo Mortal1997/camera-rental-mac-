@@ -1,17 +1,28 @@
 import type { ReactNode } from 'react';
+
 import AdminSidebar from './components/AdminSidebar';
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#effbff_0%,#f5fffc_52%,#f7fafc_100%)] text-slate-900">
-      <div className="flex min-h-screen flex-col md:flex-row">
-        <AdminSidebar />
+    <div className="flex min-h-screen w-full">
+      {/* Left: sidebar — sticky, never scrolls the page */}
+      <AdminSidebar />
 
-        <div className="min-w-0 flex-1">
-          <main className="min-h-screen px-4 py-5 sm:px-6 sm:py-8 lg:px-10 md:pl-6">
-            <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 sm:gap-6">{children}</div>
-          </main>
-        </div>
+      {/* Right: main content area — takes all remaining space */}
+      <div className="flex flex-1 flex-col min-w-0">
+        {/* Header — sticky inside the right column only */}
+        <header className="sticky top-0 z-30 flex h-[60px] shrink-0 items-center gap-3 border-b border-border/70 bg-background/96 px-4 sm:px-6 lg:px-10">
+          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">Admin Console</p>
+          <span className="h-3 w-px bg-border/50" aria-hidden />
+          <p className="text-sm font-semibold text-foreground">小玄租赁运营后台</p>
+        </header>
+
+        {/* Page content */}
+        <main className="flex-1 px-4 py-5 sm:px-6 sm:py-8 lg:px-10">
+          <div className="mx-auto w-full max-w-[1680px] rounded-[30px] border border-border/70 bg-card/88 p-4 shadow-sm backdrop-blur-lg sm:p-6 lg:p-8">
+            <div className="flex w-full flex-col gap-4 sm:gap-6">{children}</div>
+          </div>
+        </main>
       </div>
     </div>
   );

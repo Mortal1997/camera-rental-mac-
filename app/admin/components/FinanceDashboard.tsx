@@ -1,9 +1,13 @@
 'use client';
 
+import { format } from 'date-fns';
+import { zhCN } from 'date-fns/locale';
 import { useMemo, useState, useTransition } from 'react';
+import { type DateRange } from 'react-day-picker';
 import { getFinancialReport, type FinancialReport } from '../../actions/finance-actions';
-import { BarChart3, Calendar, RefreshCw, Search } from 'lucide-react';
-import { EmptyState, FilterPanel, InfoTile, MetricCard, PageHeader, PrimaryButton, SecondaryButton, SectionHeader, StatBadge, SurfaceCard, TableHead, TableShell, Td, TextInput, Th, Tr } from './ui';
+import { BarChart3, RefreshCw, Search } from 'lucide-react';
+import { EmptyState, FilterPanel, InfoTile, MetricCard, PageHeader, PrimaryButton, SecondaryButton, SectionHeader, StatBadge, SurfaceCard, TableHead, TableShell, Td, Th, Tr } from './ui';
+import { DateRangePicker } from '@/components/ui/date-range-picker';
 
 interface FinanceDashboardProps {
   initialReport: FinancialReport;
@@ -31,8 +35,11 @@ const defaultYearRange = {
 
 export default function FinanceDashboard({ initialReport }: FinanceDashboardProps) {
   const [report, setReport] = useState(initialReport);
-  const [startDate, setStartDate] = useState(initialReport.startDate);
-  const [endDate, setEndDate] = useState(initialReport.endDate);
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(
+    initialReport.startDate && initialReport.endDate
+      ? { from: new Date(initialReport.startDate), to: new Date(initialReport.endDate) }
+      : undefined
+  );
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -43,18 +50,21 @@ export default function FinanceDashboard({ initialReport }: FinanceDashboardProp
 
   const handleQuery = () => {
     setError(null);
-    if (!startDate || !endDate) {
-      setError('请选择开始日期和结束日期');
+    if (!dateRange?.from || !dateRange?.to) {
+      setError('请选择完整的时间范围');
       return;
     }
-    if (startDate > endDate) {
+    if (dateRange.from > dateRange.to) {
       setError('开始日期不能晚于结束日期');
       return;
     }
 
     startTransition(async () => {
       try {
-        const nextReport = await getFinancialReport(startDate, endDate);
+        const nextReport = await getFinancialReport(
+          format(dateRange.from!, 'yyyy-MM-dd'),
+          format(dateRange.to!, 'yyyy-MM-dd')
+        );
         setReport(nextReport);
       } catch {
         setError('查询失败，请稍后重试');
@@ -64,8 +74,9 @@ export default function FinanceDashboard({ initialReport }: FinanceDashboardProp
 
   const handleReset = () => {
     setError(null);
-    setStartDate(defaultYearRange.startDate);
-    setEndDate(defaultYearRange.endDate);
+    const defaultStart = new Date(today.getFullYear(), 0, 1);
+    const defaultEnd = new Date(today.getFullYear(), 11, 31);
+    setDateRange({ from: defaultStart, to: defaultEnd });
 
     startTransition(async () => {
       try {
@@ -82,20 +93,14 @@ export default function FinanceDashboard({ initialReport }: FinanceDashboardProp
       <PageHeader eyebrow="Finance Report" title="财务报表" description="按自定义时间范围查看已完成订单收入、月度汇总和回款明细。" />
 
       <FilterPanel className="xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
-        <div className="grid gap-4 md:grid-cols-2 xl:min-w-[420px] xl:flex-1">
+        <div className="grid gap-4 md:grid-cols-1 xl:min-w-[340px] xl:flex-1">
           <label className="flex flex-col gap-2 text-[13px] font-medium text-slate-600">
-            开始日期
-            <div className="relative">
-              <Calendar className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <TextInput type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="py-3 pl-10 pr-4" />
-            </div>
-          </label>
-          <label className="flex flex-col gap-2 text-[13px] font-medium text-slate-600">
-            结束日期
-            <div className="relative">
-              <Calendar className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <TextInput type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="py-3 pl-10 pr-4" />
-            </div>
+            时间范围
+            <DateRangePicker
+              date={dateRange}
+              onDateChange={setDateRange}
+              placeholder="请选择时间范围..."
+            />
           </label>
         </div>
 

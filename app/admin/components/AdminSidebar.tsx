@@ -1,32 +1,47 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   BadgeDollarSign,
-  BookOpenText,
   Boxes,
   CalendarDays,
-  ChevronLeft,
-  ChevronRight,
+  Camera,
   ClipboardList,
   LayoutDashboard,
-  Menu,
-  X,
+  LogOut,
+  Settings,
 } from 'lucide-react';
-import { cn } from './ui';
+import { cn } from '@/lib/utils';
+import { createClient } from '@/lib/supabase/client';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
-const navigationItems = [
+type NavItem = {
+  href: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  matchPrefix?: string;
+};
+
+const navigationItems: NavItem[] = [
   { href: '/admin/dashboard', label: '数据看板', icon: LayoutDashboard },
   { href: '/admin', label: '排期看板', icon: CalendarDays },
   { href: '/admin/orders/dispatch', label: '订单管理', icon: ClipboardList, matchPrefix: '/admin/orders' },
-  { href: '/admin/webhook-wiki', label: 'Webhook Wiki', icon: BookOpenText },
   { href: '/admin/inventory', label: '仓库管理', icon: Boxes },
   { href: '/admin/finance', label: '财务报表', icon: BadgeDollarSign },
 ];
 
-const collapseStorageKey = 'admin-sidebar-collapsed';
+const secondaryItems = [
+  { href: '/admin/settings', label: '系统设置', icon: Settings },
+] as const;
 
 function isActivePath(pathname: string, href: string, matchPrefix?: string) {
   if (matchPrefix) return pathname.startsWith(matchPrefix);
@@ -34,143 +49,164 @@ function isActivePath(pathname: string, href: string, matchPrefix?: string) {
   return pathname.startsWith(href);
 }
 
+function getInitials(email: string) {
+  return email.charAt(0).toUpperCase();
+}
+
 export default function AdminSidebar() {
   const pathname = usePathname();
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const router = useRouter();
+  const [user, setUser] = useState<{ email?: string; fullName?: string } | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
-    const storedValue = window.localStorage.getItem(collapseStorageKey);
-    if (storedValue === 'true') {
-      setIsCollapsed(true);
+    async function loadUser() {
+      const supabase = createClient();
+      const { data } = await supabase.auth.getUser();
+      if (data.user) {
+        setUser({
+          email: data.user.email,
+          fullName: data.user.user_metadata?.full_name,
+        });
+      }
     }
+    loadUser();
   }, []);
 
-  useEffect(() => {
-    window.localStorage.setItem(collapseStorageKey, String(isCollapsed));
-  }, [isCollapsed]);
-
-  const activeLabel = useMemo(() => {
-    return navigationItems.find((item) => isActivePath(pathname, item.href, item.matchPrefix))?.label ?? '导航';
-  }, [pathname]);
-
-  const sidebarContent = (
-    <>
-      <div className="flex items-center justify-between gap-3">
-        <div
-          className={cn(
-            'flex min-h-14 flex-1 items-center rounded-[24px] border border-cyan-200/55 bg-white/38 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.42),0_12px_30px_rgba(14,165,233,0.08)] backdrop-blur-xl',
-            isCollapsed ? 'justify-center px-2' : 'justify-between'
-          )}
-        >
-          <div className={cn('min-w-0', isCollapsed && 'hidden')}>
-            <div className="h-2.5 w-16 rounded-full bg-cyan-500/38" />
-            <div className="mt-2 h-2.5 w-24 rounded-full bg-teal-400/22" />
-          </div>
-          <div
-            className={cn(
-              'rounded-[18px] border border-dashed border-cyan-200/55 bg-white/46 shadow-[0_10px_30px_rgba(14,165,233,0.1)] backdrop-blur-md',
-              isCollapsed ? 'h-9 w-9' : 'h-10 w-10 shrink-0'
-            )}
-            aria-hidden="true"
-          />
-        </div>
-
-        <button
-          type="button"
-          onClick={() => setIsMobileOpen(false)}
-          className="flex h-9 w-9 items-center justify-center rounded-full border border-cyan-200/60 bg-white/40 text-cyan-800/70 transition-colors hover:bg-white/58 md:hidden"
-          aria-label="关闭导航"
-        >
-          <X className="h-4 w-4" strokeWidth={1.9} />
-        </button>
-      </div>
-
-      <nav className="mt-5 flex flex-1 flex-col gap-1.5 md:mt-7">
-        {navigationItems.map((item) => {
-          const isActive = isActivePath(pathname, item.href, item.matchPrefix);
-          const Icon = item.icon;
-
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={() => setIsMobileOpen(false)}
-              className={cn(
-                'group flex items-center gap-2.5 rounded-[18px] px-2.5 py-2.5 text-[12px] font-medium transition-all duration-200 backdrop-blur-sm',
-                isCollapsed ? 'justify-center px-2' : 'justify-start',
-                isActive
-                  ? 'border border-cyan-200/60 bg-[linear-gradient(135deg,rgba(255,255,255,0.68),rgba(224,242,254,0.62))] text-cyan-950 shadow-[0_12px_28px_rgba(14,165,233,0.12)]'
-                  : 'text-cyan-900/66 hover:bg-white/34 hover:text-cyan-950'
-              )}
-              aria-label={item.label}
-              title={item.label}
-            >
-              <span
-                className={cn(
-                  'flex h-7 w-7 shrink-0 items-center justify-center rounded-[14px] transition-all duration-200',
-                  isActive
-                    ? 'bg-white/70 text-cyan-700 shadow-[0_8px_18px_rgba(14,165,233,0.12)]'
-                    : 'bg-white/34 text-cyan-700/58 group-hover:bg-white/48 group-hover:text-cyan-800'
-                )}
-              >
-                <Icon className="h-3.5 w-3.5" strokeWidth={1.9} />
-              </span>
-              <span className={cn('truncate', isCollapsed && 'hidden')}>{item.label}</span>
-            </Link>
-          );
-        })}
-      </nav>
-
-      <button
-        type="button"
-        onClick={() => setIsCollapsed((value) => !value)}
-        className="mt-3 hidden items-center justify-center gap-2 rounded-full border border-cyan-200/60 bg-white/34 px-2.5 py-2 text-[12px] font-medium text-cyan-900/68 transition-colors hover:bg-white/54 hover:text-cyan-950 md:flex"
-        aria-label={isCollapsed ? '展开侧边栏' : '折叠侧边栏'}
-      >
-        {isCollapsed ? <ChevronRight className="h-3.5 w-3.5" strokeWidth={1.9} /> : <ChevronLeft className="h-3.5 w-3.5" strokeWidth={1.9} />}
-        <span className={cn(isCollapsed && 'hidden')}>{isCollapsed ? '展开导航' : '折叠导航'}</span>
-      </button>
-    </>
-  );
+  async function handleSignOut() {
+    setSigningOut(true);
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push('/login');
+    router.refresh();
+  }
 
   return (
-    <>
-      <div className="sticky top-0 z-30 border-b border-cyan-100/70 bg-white/70 px-4 py-3 backdrop-blur-xl md:hidden">
-        <div className="flex items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={() => setIsMobileOpen(true)}
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-cyan-100/80 bg-white/76 text-cyan-700 shadow-[0_6px_18px_rgba(14,165,233,0.08)] backdrop-blur-sm"
-            aria-label="打开导航"
-          >
-            <Menu className="h-4 w-4" strokeWidth={1.9} />
-          </button>
-          <div className="min-w-0 flex-1 text-right">
-            <p className="text-[11px] font-medium text-cyan-700/55">当前页面</p>
-            <p className="truncate text-[14px] font-semibold tracking-[-0.01em] text-slate-900">{activeLabel}</p>
+    <aside className="flex w-[260px] shrink-0 flex-col border-r border-sidebar-border bg-sidebar h-screen sticky top-0 overflow-y-auto">
+      {/* Logo / brand header */}
+      <div className="border-b border-sidebar-border px-3 py-3 shrink-0">
+        <Link
+          href="/admin/dashboard"
+          className="flex h-auto items-center gap-3 rounded-2xl px-3 py-3 hover:bg-sidebar-accent"
+        >
+          <div className="flex aspect-square size-11 shrink-0 items-center justify-center rounded-2xl bg-sidebar-accent text-sidebar-foreground ring-1 ring-sidebar-border">
+            <Camera className="size-5" />
           </div>
-        </div>
+          <div className="grid flex-1 text-left text-sm leading-tight">
+            <span className="truncate font-semibold text-sidebar-foreground">Camera Rental</span>
+            <span className="truncate text-xs text-sidebar-foreground/60">后台管理系统</span>
+          </div>
+        </Link>
       </div>
 
-      {isMobileOpen ? (
-        <button
-          type="button"
-          className="fixed inset-0 z-40 bg-cyan-950/12 backdrop-blur-[2px] md:hidden"
-          onClick={() => setIsMobileOpen(false)}
-          aria-label="关闭导航遮罩"
-        />
-      ) : null}
+      {/* Navigation */}
+      <nav className="flex-1 px-2 py-3">
+        <p className="mb-2 px-3 text-[11px] font-medium uppercase tracking-widest text-sidebar-foreground/40">
+          控制台
+        </p>
+        <ul className="flex flex-col gap-0.5">
+          {navigationItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = isActivePath(pathname, item.href, item.matchPrefix);
 
-      <aside
-        className={cn(
-          'fixed inset-y-0 left-0 z-50 flex h-full w-[208px] max-w-[78vw] flex-col border-r border-cyan-200/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.52)_0%,rgba(224,242,254,0.46)_55%,rgba(204,251,241,0.44)_100%)] px-3 py-4 shadow-[0_22px_60px_rgba(14,165,233,0.12)] backdrop-blur-2xl transition-transform duration-300 md:sticky md:top-0 md:z-20 md:min-h-screen md:max-w-none md:py-5',
-          isCollapsed ? 'md:w-[76px]' : 'md:w-[188px]',
-          isMobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
-        )}
-      >
-        {sidebarContent}
-      </aside>
-    </>
+            return (
+              <li key={item.href}>
+                <Link
+                  href={item.href}
+                  className={cn(
+                    'flex h-11 items-center gap-3 rounded-xl px-3 text-sm transition-all',
+                    isActive
+                      ? 'bg-sidebar-primary font-medium text-sidebar-primary-foreground shadow-sm'
+                      : 'text-sidebar-foreground/72 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
+                  )}
+                >
+                  <Icon className="size-4 shrink-0" />
+                  <span>{item.label}</span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+
+        {/* Secondary nav — settings */}
+        <p className="mb-2 mt-5 px-3 text-[11px] font-medium uppercase tracking-widest text-sidebar-foreground/40">
+          账户
+        </p>
+        <ul className="flex flex-col gap-0.5">
+          {secondaryItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = pathname === item.href;
+
+            return (
+              <li key={item.href}>
+                <Link
+                  href={item.href}
+                  className={cn(
+                    'flex h-11 items-center gap-3 rounded-xl px-3 text-sm transition-all',
+                    isActive
+                      ? 'bg-sidebar-primary font-medium text-sidebar-primary-foreground shadow-sm'
+                      : 'text-sidebar-foreground/72 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
+                  )}
+                >
+                  <Icon className="size-4 shrink-0" />
+                  <span>{item.label}</span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
+
+      {/* User card — pinned to bottom */}
+      <div className="shrink-0 border-t border-sidebar-border p-2">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              disabled={signingOut}
+              className={cn(
+                'flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all',
+                'hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring',
+                signingOut && 'opacity-50 pointer-events-none'
+              )}
+            >
+              <Avatar size="sm" className="ring-1 ring-sidebar-border">
+                <AvatarFallback className="bg-sidebar-accent text-sidebar-foreground text-xs font-medium">
+                  {user?.email ? getInitials(user.email) : '?'}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[13px] font-medium text-sidebar-foreground leading-tight">
+                  {user?.fullName ?? user?.email ?? '加载中…'}
+                </p>
+                {user?.email && !user?.fullName && (
+                  <p className="truncate text-[11px] text-sidebar-foreground/50 leading-tight">
+                    {user.email}
+                  </p>
+                )}
+              </div>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="top" align="start" className="w-52">
+            <DropdownMenuItem
+              onClick={() => router.push('/admin/settings')}
+              className="cursor-pointer"
+            >
+              <Settings className="mr-2 size-4" />
+              个人设置
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={handleSignOut}
+              variant="destructive"
+              className="cursor-pointer"
+            >
+              <LogOut className="mr-2 size-4" />
+              退出登录
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </aside>
   );
 }
