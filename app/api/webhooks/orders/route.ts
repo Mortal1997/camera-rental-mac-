@@ -1,240 +1,253 @@
-import crypto from 'crypto';
-import { createClient } from '@supabase/supabase-js';
-import { NextResponse } from 'next/server';
+import { createClient as createAdminClient } from '@supabase/supabase-js';
+import { NextRequest, NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 
-const REQUIRED_FIELDS = ['platform_source', 'customer_name', 'customer_phone'] as const;
-
-type WebhookPayload = {
-  platform_source?: unknown;
-  customer_name?: unknown;
-  customer_phone?: unknown;
-  external_order_id?: unknown;
-  order_id?: unknown;
-  shipping_address?: unknown;
-  expected_equipment_model?: unknown;
-  start_date?: unknown;
-  end_date?: unknown;
-  total_price?: unknown;
-  deposit_paid?: unknown;
-  shipping_method?: unknown;
-  deposit_exemption?: unknown;
-  metadata?: unknown;
+type GoofishWebhookOrder = {
+  order_no?: string;
+  buyer_nick?: string;
+  pay_amount?: number;
+  receiver_mobile?: string;
+  receiver_name?: string;
+  prov_name?: string;
+  city_name?: string;
+  area_name?: string;
+  address?: string;
+  create_time?: number;
+  goods?: {
+    title?: string;
+  };
   [key: string]: unknown;
 };
 
-function md5(value: string) {
-  return crypto.createHash('md5').update(value, 'utf8').digest('hex');
+type WebhookPayload = {
+  app_key?: string;
+  appid?: string;
+  seller_id?: string;
+  code?: number;
+  msg?: string;
+  data?: {
+    list?: GoofishWebhookOrder[];
+  };
+  event_type?: string;
+  timestamp?: number;
+  [key: string]: unknown;
+};
+
+type OrderPayload = {
+  user_id: string;
+  external_order_id: string;
+  customer_name: string;
+  total_price: number;
+  customer_phone: string;
+  shipping_address: string;
+  platform_source: string;
+  created_at: string;
+  expected_equipment_model: string;
+  status: 'unprocessed';
+  start_date: string;
+  end_date: string;
+  deposit_exemption: string;
+  shipping_method: string;
+  deposit_paid: number;
+  metadata: GoofishWebhookOrder;
+};
+
+type BuildResult =
+  | { ok: true; payload: OrderPayload }
+  | { ok: false; reason: string; orderNo: string | null; rawOrder: GoofishWebhookOrder };
+
+function buildShippingAddress(order: GoofishWebhookOrder) {
+  return `${order.receiver_name ? `${order.receiver_name} | ` : ''}${order.prov_name ?? ''}${order.city_name ?? ''}${order.area_name ?? ''}${order.address ?? ''}`;
 }
 
-function getRequiredEnv(name: string) {
-  const value = process.env[name]?.trim();
-  if (!value) {
-    throw new Error(`缺少环境变量：${name}`);
-  }
-  return value;
-}
+function buildOrderPayload(order: GoofishWebhookOrder, userId: string): BuildResult {
+  const createdAt = order.create_time
+    ? new Date(order.create_time * 1000).toISOString()
+    : new Date().toISOString();
+  const shippingAddress = buildShippingAddress(order) || '待补充地址';
+  const externalOrderId = typeof order.order_no === 'string' ? order.order_no.trim() : '';
 
-function normalizeText(value: unknown) {
-  if (typeof value !== 'string') return undefined;
-  const trimmed = value.trim();
-  return trimmed === '' ? undefined : trimmed;
-}
-
-function normalizeNullableDate(value: unknown) {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  return trimmed === '' ? null : trimmed;
-}
-
-function normalizeNumber(value: unknown) {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function extractBearerToken(authorizationHeader: string | null) {
-  if (!authorizationHeader) return null;
-  const match = authorizationHeader.match(/^Bearer\s+(.+)$/i);
-  return match?.[1]?.trim() || null;
-}
-
-function verifyGoofishSignature(request: Request, bodyString: string) {
-  const appKey = process.env.GOOFISH_APP_KEY?.trim();
-  const appSecret = process.env.GOOFISH_APP_SECRET?.trim();
-  const { searchParams } = new URL(request.url);
-  const appId = searchParams.get('appid');
-  const timestamp = searchParams.get('timestamp');
-  const sign = searchParams.get('sign');
-
-  if (!appId && !timestamp && !sign) {
-    return { verified: false, checked: false, errorResponse: null as NextResponse | null };
-  }
-
-  if (!appKey || !appSecret) {
-    return {
-      verified: false,
-      checked: true,
-      errorResponse: NextResponse.json({ success: false, error: '服务端未配置闲管家签名密钥' }, { status: 500 }),
-    };
+  if (!externalOrderId) {
+    return { ok: false, reason: '缺少 order_no', orderNo: null, rawOrder: order };
   }
 
-  if (!appId || !timestamp || !sign || appId !== appKey) {
-    return {
-      verified: false,
-      checked: true,
-      errorResponse: NextResponse.json({ success: false, error: '签名参数缺失或无效' }, { status: 401 }),
-    };
-  }
+  const totalPrice =
+    typeof order.pay_amount === 'number' && Number.isFinite(order.pay_amount)
+      ? order.pay_amount / 100
+      : 0;
 
-  const bodyMd5 = md5(bodyString);
-  const expectedSign = md5(`${appKey},${bodyMd5},${timestamp},${appSecret}`);
-
-  if (expectedSign !== sign) {
-    return {
-      verified: false,
-      checked: true,
-      errorResponse: NextResponse.json({ success: false, error: '签名校验失败' }, { status: 401 }),
-    };
-  }
-
-  return { verified: true, checked: true, errorResponse: null as NextResponse | null };
+  return {
+    ok: true,
+    payload: {
+      user_id: userId,
+      external_order_id: externalOrderId,
+      customer_name: order.buyer_nick || order.receiver_name || '未知买家',
+      total_price: totalPrice,
+      customer_phone: order.receiver_mobile || '待补充电话',
+      shipping_address: shippingAddress,
+      platform_source: '闲鱼',
+      created_at: createdAt,
+      expected_equipment_model: order.goods?.title || '未知设备',
+      status: 'unprocessed',
+      start_date: createdAt.slice(0, 10),
+      end_date: createdAt.slice(0, 10),
+      deposit_exemption: '待确认',
+      shipping_method: '待确认',
+      deposit_paid: 0,
+      metadata: order,
+    },
+  };
 }
 
-function verifyWebhookSecret(request: Request) {
-  const configuredSecret = process.env.ORDER_WEBHOOK_SECRET?.trim();
-  if (!configuredSecret) {
-    return null;
-  }
-
-  const bearerToken = extractBearerToken(request.headers.get('authorization'));
-  const headerSecret = request.headers.get('x-webhook-secret')?.trim() || null;
-  const providedSecret = bearerToken || headerSecret;
-
-  if (providedSecret !== configuredSecret) {
-    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
-  }
-
-  return null;
+function extractMerchantIdentifier(payload: WebhookPayload): string | null {
+  return (
+    payload.app_key ||
+    payload.appid ||
+    payload.seller_id ||
+    (payload as Record<string, unknown>).appId as string ||
+    (payload as Record<string, unknown>).sellerId as string ||
+    null
+  );
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const requestId = crypto.randomUUID();
+  const log = (msg: string, data?: unknown) => {
+    console.log(`[webhook/orders][${requestId}] ${msg}`, data ?? '');
+  };
+
   try {
-    const supabaseUrl = getRequiredEnv('NEXT_PUBLIC_SUPABASE_URL');
-    const supabaseServiceRoleKey = getRequiredEnv('SUPABASE_SERVICE_ROLE_KEY');
-    const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
+    log('Webhook 请求开始');
 
-    const bodyString = await request.text();
-    const signatureCheck = verifyGoofishSignature(request, bodyString);
-    if (signatureCheck.errorResponse) {
-      return signatureCheck.errorResponse;
-    }
-
-    const secretError = verifyWebhookSecret(request);
-    if (secretError) {
-      return secretError;
-    }
+    const supabaseAdmin = createAdminClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
 
     let payload: WebhookPayload;
     try {
-      payload = JSON.parse(bodyString || '{}') as WebhookPayload;
+      payload = await request.json();
     } catch {
-      return NextResponse.json({ success: false, error: 'Invalid JSON payload' }, { status: 400 });
+      log('解析 JSON 失败');
+      return NextResponse.json({ error: '无效的 JSON 数据' }, { status: 400 });
     }
 
-    const platformSource = normalizeText(payload.platform_source);
-    const customerName = normalizeText(payload.customer_name);
-    const customerPhone = normalizeText(payload.customer_phone);
+    log('Payload 解析成功', { code: payload.code, hasData: !!payload.data });
 
-    if (!platformSource || !customerName || !customerPhone) {
+    if (payload.code !== 0 && payload.code !== undefined) {
+      log('闲管家推送错误', { code: payload.code, msg: payload.msg });
+      return NextResponse.json(
+        { error: payload.msg || '闲管家推送错误', code: payload.code },
+        { status: 400 }
+      );
+    }
+
+    const merchantId = extractMerchantIdentifier(payload);
+
+    if (!merchantId) {
+      log('无法提取商户标识', payload);
       return NextResponse.json(
         {
-          success: false,
-          error: `required fields missing: ${REQUIRED_FIELDS.join(', ')}`,
+          error: '无法识别商户身份',
+          hint: 'Webhook payload 中缺少 app_key / appid / seller_id 字段',
+          received_fields: Object.keys(payload),
         },
         { status: 400 }
       );
     }
 
-    const externalOrderId = normalizeText(payload.external_order_id) ?? normalizeText(payload.order_id);
+    log('提取到商户标识', { merchantId });
 
-    if (externalOrderId) {
-      const { data: existingOrder, error: existingOrderError } = await supabase
-        .from('orders')
-        .select('id, status')
-        .eq('platform_source', platformSource)
-        .eq('external_order_id', externalOrderId)
-        .maybeSingle();
+    const { data: settings, error: settingsError } = await supabaseAdmin
+      .from('user_settings')
+      .select('user_id, goofish_app_key')
+      .eq('goofish_app_key', merchantId)
+      .maybeSingle();
 
-      if (existingOrderError) {
-        return NextResponse.json({ success: false, error: existingOrderError.message }, { status: 500 });
-      }
-
-      if (existingOrder) {
-        return NextResponse.json({
-          success: true,
-          duplicated: true,
-          orderId: existingOrder.id,
-          status: existingOrder.status,
-        });
-      }
+    if (settingsError) {
+      log('查询 user_settings 失败', settingsError);
+      return NextResponse.json({ error: '查询租户配置失败' }, { status: 500 });
     }
 
-    const insertPayload = {
-      platform_source: platformSource,
-      customer_name: customerName,
-      customer_phone: customerPhone,
-      external_order_id: externalOrderId ?? null,
-      shipping_address: normalizeText(payload.shipping_address) ?? null,
-      expected_equipment_model: normalizeText(payload.expected_equipment_model) ?? null,
-      start_date: normalizeNullableDate(payload.start_date),
-      end_date: normalizeNullableDate(payload.end_date),
-      total_price: normalizeNumber(payload.total_price),
-      deposit_paid: normalizeNumber(payload.deposit_paid),
-      shipping_method: normalizeText(payload.shipping_method) ?? null,
-      deposit_exemption: normalizeText(payload.deposit_exemption) ?? null,
-      metadata: typeof payload.metadata === 'undefined' ? payload : payload.metadata,
-      status: 'unprocessed' as const,
-    };
+    if (!settings) {
+      log('未找到匹配的租户配置', { merchantId });
+      return NextResponse.json(
+        {
+          error: '未找到对应的租户配置',
+          hint: `系统中未配置 app_key: ${merchantId}，请在系统设置中绑定闲管家凭证`,
+          code: 'TENANT_NOT_FOUND',
+        },
+        { status: 404 }
+      );
+    }
 
-    const { data: insertedOrder, error: insertError } = await supabase
+    const userId = settings.user_id;
+    log('找到租户', { userId });
+
+    const orderList = Array.isArray(payload.data?.list) ? payload.data.list : [];
+
+    if (orderList.length === 0) {
+      log('推送数据为空');
+      return NextResponse.json({
+        success: true,
+        message: '推送数据为空',
+        processed_count: 0,
+      });
+    }
+
+    const formattedResults = orderList.map((order) => buildOrderPayload(order, userId));
+    const validOrders = formattedResults
+      .flatMap((result) => (result.ok ? [result.payload] : []));
+    const invalidOrders = formattedResults.flatMap((result) =>
+      result.ok
+        ? []
+        : { order_no: result.orderNo, reason: result.reason, raw_order: result.rawOrder }
+    );
+
+    if (validOrders.length === 0) {
+      log('订单数据格式异常，未写入', { invalidCount: invalidOrders.length });
+      return NextResponse.json({
+        success: true,
+        message: '订单数据格式异常，未写入任何订单',
+        invalid_orders: invalidOrders,
+      });
+    }
+
+    log('写入数据库', { orderCount: validOrders.length });
+
+    const { data: upsertedData, error: upsertError } = await supabaseAdmin
       .from('orders')
-      .insert(insertPayload)
-      .select('id, status')
-      .single();
+      .upsert(validOrders, {
+        onConflict: 'platform_source,external_order_id',
+        ignoreDuplicates: true,
+      })
+      .select('id');
 
-    if (insertError) {
-      const isDuplicateConflict = insertError.code === '23505';
-      if (isDuplicateConflict && externalOrderId) {
-        const { data: conflictedOrder } = await supabase
-          .from('orders')
-          .select('id, status')
-          .eq('platform_source', platformSource)
-          .eq('external_order_id', externalOrderId)
-          .maybeSingle();
-
-        return NextResponse.json({
-          success: true,
-          duplicated: true,
-          orderId: conflictedOrder?.id ?? null,
-          status: conflictedOrder?.status ?? 'unprocessed',
-        });
-      }
-
-      return NextResponse.json({ success: false, error: insertError.message }, { status: 500 });
+    if (upsertError) {
+      log('数据库写入失败', upsertError);
+      return NextResponse.json({ error: '数据库写入失败', details: upsertError.message }, { status: 500 });
     }
+
+    const insertedCount = upsertedData?.length ?? 0;
+    const skippedCount = validOrders.length - insertedCount;
+
+    log('处理完成', { insertedCount, skippedCount });
+
+    revalidatePath('/admin/orders/dispatch');
+    revalidatePath('/admin/orders');
 
     return NextResponse.json({
       success: true,
-      duplicated: false,
-      orderId: insertedOrder.id,
-      status: insertedOrder.status,
-      sourceVerified: signatureCheck.verified,
+      message: `处理完成：写入 ${insertedCount} 条，跳过 ${skippedCount} 条重复订单`,
+      processed_count: orderList.length,
+      inserted_count: insertedCount,
+      skipped_duplicates: skippedCount,
+      invalid_orders: invalidOrders,
+      tenant_id: userId,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : '系统异常';
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    console.error(`[webhook/orders][${requestId}] unhandled error:`, message);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -49,12 +49,12 @@ export function InfoTile({ className, children }: { className?: string; children
 
 export function SectionHeader({ title, description, meta }: { title: string; description?: string; meta?: ReactNode }) {
   return (
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div>
-        <h2 className="text-lg font-semibold tracking-[-0.01em] text-foreground">{title}</h2>
-        {description ? <p className="mt-1.5 text-sm leading-6 text-muted-foreground">{description}</p> : null}
+        <h2 className="text-base sm:text-lg font-semibold tracking-[-0.01em] text-foreground">{title}</h2>
+        {description ? <p className="mt-1 text-xs sm:text-sm leading-5 sm:leading-6 text-muted-foreground">{description}</p> : null}
       </div>
-      {meta ? <div className="text-sm text-muted-foreground sm:text-right">{meta}</div> : null}
+      {meta ? <div className="text-xs sm:text-sm text-muted-foreground sm:text-right">{meta}</div> : null}
     </div>
   );
 }
@@ -90,7 +90,7 @@ export function MetricCard({
   );
 }
 
-export function StatBadge({ tone = 'slate', children, dot = false }: { tone?: 'slate' | 'blue' | 'emerald' | 'amber' | 'red' | 'indigo'; children: ReactNode; dot?: boolean }) {
+export function StatBadge({ tone = 'slate', children, dot = false, className }: { tone?: 'slate' | 'blue' | 'emerald' | 'amber' | 'red' | 'indigo'; children: ReactNode; dot?: boolean; className?: string }) {
   const tones = {
     slate: 'bg-zinc-100 text-zinc-600',
     blue: 'bg-blue-50 text-blue-700',
@@ -108,7 +108,7 @@ export function StatBadge({ tone = 'slate', children, dot = false }: { tone?: 's
     indigo: 'bg-emerald-400',
   } as const;
 
-  return <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium', tones[tone])}>{dot ? <span className={cn('h-1.5 w-1.5 rounded-full', dots[tone])} /> : null}{children}</span>;
+  return <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium', tones[tone], className)}>{dot ? <span className={cn('h-1.5 w-1.5 rounded-full', dots[tone])} /> : null}{children}</span>;
 }
 
 export function StatusBadge({ label, tone, dot }: { label: string; tone: 'blue' | 'emerald' | 'amber' | 'red' | 'slate' | 'indigo'; dot?: boolean }) {
@@ -140,20 +140,20 @@ export function EmptyState({ children }: { children: ReactNode }) {
 }
 
 export function PrimaryButton({ className, children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  return <button {...props} className={cn('inline-flex items-center justify-center gap-2 rounded-full bg-foreground px-4 py-2.5 text-[13px] font-medium text-background shadow-sm transition-all duration-200 hover:scale-[0.98] hover:bg-foreground/80 hover:shadow-md disabled:opacity-50', className)}>{children}</button>;
+  return <button {...props} className={cn('inline-flex items-center justify-center gap-1.5 md:gap-2 rounded-full bg-foreground px-3 py-1.5 md:px-4 md:py-2.5 text-xs md:text-[13px] font-medium text-background shadow-sm transition-all duration-200 hover:scale-[0.98] hover:bg-foreground/80 hover:shadow-md disabled:opacity-50', className)}>{children}</button>;
 }
 
 export function SecondaryButton({ className, children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  return <button {...props} className={cn('inline-flex items-center justify-center gap-2 rounded-full border border-border/80 bg-card px-4 py-2.5 text-[13px] font-medium text-foreground shadow-sm transition-all duration-200 hover:scale-[0.98] hover:bg-muted/55 hover:shadow-md disabled:opacity-50', className)}>{children}</button>;
+  return <button {...props} className={cn('inline-flex items-center justify-center gap-1.5 md:gap-2 rounded-full border border-border/80 bg-card px-3 py-1.5 md:px-4 md:py-2.5 text-xs md:text-[13px] font-medium text-foreground shadow-sm transition-all duration-200 hover:scale-[0.98] hover:bg-muted/55 hover:shadow-md disabled:opacity-50', className)}>{children}</button>;
 }
 
 export function DangerButton({ className, children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  return <button {...props} className={cn('inline-flex items-center justify-center gap-2 rounded-full bg-muted border border-border/80 px-4 py-2.5 text-[13px] font-medium text-foreground transition-all duration-200 hover:scale-[0.98] hover:bg-muted/80 hover:shadow-sm disabled:opacity-50', className)}>{children}</button>;
+  return <button {...props} className={cn('inline-flex items-center justify-center gap-1.5 md:gap-2 rounded-full bg-muted border border-border/80 px-3 py-1.5 md:px-4 md:py-2.5 text-xs md:text-[13px] font-medium text-foreground transition-all duration-200 hover:scale-[0.98] hover:bg-muted/80 hover:shadow-sm disabled:opacity-50', className)}>{children}</button>;
 }
 
 export function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
   const { className, ...rest } = props;
-  return <input {...rest} className={cn('w-full rounded-2xl border border-input bg-background px-4 py-3 text-[14px] text-foreground shadow-sm transition-all outline-none placeholder:text-muted-foreground focus:border-foreground/30 focus:ring-2 focus:ring-foreground/10', className)} />;
+  return <input {...rest} className={cn('w-full rounded-2xl border border-input bg-background px-3 py-2 md:px-4 md:py-3 text-xs md:text-[14px] text-foreground shadow-sm transition-all outline-none placeholder:text-muted-foreground focus:border-foreground/30 focus:ring-2 focus:ring-foreground/10', className)} />;
 }
 
 export function SelectInput(props: React.SelectHTMLAttributes<HTMLSelectElement>) {

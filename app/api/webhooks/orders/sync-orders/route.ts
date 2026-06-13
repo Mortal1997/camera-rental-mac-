@@ -1,6 +1,7 @@
 import crypto from 'crypto';
+import { createClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { revalidatePath } from 'next/cache';
 
 const API_URL = 'https://open.goofish.pro/api/open/order/list';
 const PENDING_SHIPMENT_STATUS = 12;
@@ -35,19 +36,12 @@ function md5(value: string) {
   return crypto.createHash('md5').update(value, 'utf8').digest('hex');
 }
 
-function getRequiredEnv(name: string) {
-  const value = process.env[name]?.trim();
-  if (!value) {
-    throw new Error(`缺少环境变量：${name}`);
-  }
-  return value;
-}
-
 function buildShippingAddress(order: GoofishOrder) {
   return `${order.receiver_name ? `${order.receiver_name} | ` : ''}${order.prov_name ?? ''}${order.city_name ?? ''}${order.area_name ?? ''}${order.address ?? ''}`;
 }
 
 type SyncPayload = {
+  user_id: string;
   external_order_id: string;
   customer_name: string;
   total_price: number;
@@ -69,95 +63,26 @@ type BuildPayloadResult =
   | { ok: true; payload: SyncPayload }
   | { ok: false; reason: string; orderNo: string | null; rawOrder: GoofishOrder };
 
-type OrdersTableQuery = {
-  upsert: (values: SyncPayload[], options: { onConflict: string; ignoreDuplicates: boolean }) => { select: (columns: string) => Promise<{ data: Array<{ id: string }> | null; error: { message: string; code?: string | null; hint?: string | null; details?: string | null } | null }> };
-  select: (columns: string) => { eq: (column: string, value: string) => { in: (column: string, values: string[]) => Promise<{ data: Array<{ external_order_id?: string | null }> | null; error: { message: string; code?: string | null; hint?: string | null; details?: string | null } | null }> } };
-  insert: (values: SyncPayload[]) => { select: (columns: string) => Promise<{ data: Array<{ id: string }> | null; error: { message: string; code?: string | null; hint?: string | null; details?: string | null } | null }> };
-};
-
-async function insertOrdersWithFallback(
-  getOrdersTable: () => OrdersTableQuery,
-  formattedOrders: SyncPayload[]
-) {
-  const upsertResult = await getOrdersTable()
-    .upsert(formattedOrders, {
-      onConflict: 'platform_source,external_order_id',
-      ignoreDuplicates: true,
-    })
-    .select('id');
-
-  if (!upsertResult.error || upsertResult.error.code !== '42P10') {
-    return {
-      ...upsertResult,
-      mode: 'upsert' as const,
-      skippedDuplicates: 0,
-    };
-  }
-
-  const externalOrderIds = formattedOrders.map((order) => order.external_order_id);
-  const { data: existingOrders, error: existingOrdersError } = await getOrdersTable()
-    .select('external_order_id')
-    .eq('platform_source', '闲鱼')
-    .in('external_order_id', externalOrderIds);
-
-  if (existingOrdersError) {
-    return {
-      data: null,
-      error: existingOrdersError,
-      mode: 'fallback_lookup_failed' as const,
-      skippedDuplicates: 0,
-    };
-  }
-
-  const existingIds = new Set(
-    ((existingOrders ?? []) as Array<{ external_order_id?: string | null }>)
-      .map((order) => order.external_order_id)
-      .filter((value): value is string => typeof value === 'string' && value.length > 0)
-  );
-
-  const newOrders = formattedOrders.filter((order) => !existingIds.has(order.external_order_id));
-
-  if (newOrders.length === 0) {
-    return {
-      data: [],
-      error: null,
-      mode: 'fallback_noop' as const,
-      skippedDuplicates: formattedOrders.length,
-    };
-  }
-
-  const insertResult = await getOrdersTable()
-    .insert(newOrders)
-    .select('id');
-
-  return {
-    ...insertResult,
-    mode: 'fallback_insert' as const,
-    skippedDuplicates: formattedOrders.length - newOrders.length,
-  };
-}
-
-function buildSyncPayload(order: GoofishOrder): BuildPayloadResult {
-  const createdAt = order.create_time ? new Date(order.create_time * 1000).toISOString() : new Date().toISOString();
+async function buildSyncPayload(order: GoofishOrder, userId: string): Promise<BuildPayloadResult> {
+  const createdAt = order.create_time
+    ? new Date(order.create_time * 1000).toISOString()
+    : new Date().toISOString();
   const shippingAddress = buildShippingAddress(order) || '待补充地址';
   const externalOrderId = typeof order.order_no === 'string' ? order.order_no.trim() : '';
 
   if (!externalOrderId) {
-    return {
-      ok: false,
-      reason: '缺少 order_no',
-      orderNo: null,
-      rawOrder: order,
-    };
+    return { ok: false, reason: '缺少 order_no', orderNo: null, rawOrder: order };
   }
 
-  const totalPrice = typeof order.pay_amount === 'number' && Number.isFinite(order.pay_amount)
-    ? order.pay_amount / 100
-    : 0;
+  const totalPrice =
+    typeof order.pay_amount === 'number' && Number.isFinite(order.pay_amount)
+      ? order.pay_amount / 100
+      : 0;
 
   return {
     ok: true,
     payload: {
+      user_id: userId,
       external_order_id: externalOrderId,
       customer_name: order.buyer_nick || order.receiver_name || '未知买家',
       total_price: totalPrice,
@@ -179,18 +104,50 @@ function buildSyncPayload(order: GoofishOrder): BuildPayloadResult {
 
 export async function GET() {
   try {
-    const appKey = getRequiredEnv('GOOFISH_APP_KEY');
-    const appSecret = getRequiredEnv('GOOFISH_APP_SECRET');
-    const supabaseUrl = getRequiredEnv('NEXT_PUBLIC_SUPABASE_URL');
-    const supabaseServiceRoleKey = getRequiredEnv('SUPABASE_SERVICE_ROLE_KEY');
-    const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
+    const supabase = await createClient();
 
+    // ── Step 1：获取当前登录用户 ──
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: '未登录或会话已过期，请重新登录' },
+        { status: 401 }
+      );
+    }
+
+    // ── Step 2：查询该用户的闲管家凭证 ──
+    const { data: settings, error: settingsError } = await supabase
+      .from('user_settings')
+      .select('goofish_app_key, goofish_app_secret')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (settingsError) {
+      console.error('[sync-orders] 查询用户配置失败:', settingsError);
+      return NextResponse.json(
+        { error: '读取用户配置失败，请稍后重试' },
+        { status: 500 }
+      );
+    }
+
+    if (!settings?.goofish_app_key || !settings?.goofish_app_secret) {
+      return NextResponse.json(
+        {
+          error: '尚未配置闲管家 API 凭证',
+          hint: '请前往「系统设置」填写 AppKey 和 AppSecret 后再同步',
+        },
+        { status: 400 }
+      );
+    }
+
+    const { goofish_app_key: appKey, goofish_app_secret: appSecret } = settings;
+
+    // ── Step 3：用用户凭证请求闲管家 API ──
     const requestBody = {
       page_no: 1,
       page_size: PAGE_SIZE,
       order_status: PENDING_SHIPMENT_STATUS,
     };
-
     const bodyString = JSON.stringify(requestBody);
     const timestamp = Math.floor(Date.now() / 1000).toString();
     const bodyMd5 = md5(bodyString);
@@ -221,47 +178,40 @@ export async function GET() {
     }
 
     const orderList = Array.isArray(data.data?.list) ? data.data.list : [];
-    const formattedResults = orderList.map(buildSyncPayload);
-    const formattedOrders = formattedResults.flatMap((result) => (result.ok ? [result.payload] : []));
-    const invalidOrders = formattedResults.flatMap((result) => (
+    const formattedResults = await Promise.all(orderList.map((o) => buildSyncPayload(o, user.id)));
+    const formattedOrders = formattedResults
+      .flatMap((result) => (result.ok ? [result.payload] : []));
+    const invalidOrders = formattedResults.flatMap((result) =>
       result.ok
         ? []
         : [{ order_no: result.orderNo, reason: result.reason, raw_order: result.rawOrder }]
-    ));
+    );
 
     if (formattedOrders.length === 0) {
       return NextResponse.json({
-        success: invalidOrders.length === 0,
-        message: invalidOrders.length === 0 ? '当前没有待发货的订单需要同步' : '订单数据格式异常，未写入任何订单',
+        success: true,
+        message:
+          invalidOrders.length === 0
+            ? '当前没有待发货的订单需要同步'
+            : '订单数据格式异常，未写入任何订单',
         inserted_count: 0,
         invalid_orders: invalidOrders,
       });
     }
 
-    const writeResult = await insertOrdersWithFallback(
-      () => supabase.from('orders') as unknown as OrdersTableQuery,
-      formattedOrders
-    );
-    const { data: insertedData, error } = writeResult;
+    // ── Step 4：写入数据库 ──
+    const { data: insertedData, error } = await supabase
+      .from('orders')
+      .upsert(formattedOrders, {
+        onConflict: 'external_order_id',
+        ignoreDuplicates: true,
+      })
+      .select('id');
 
     if (error) {
-      console.error('sync-orders database write failed', {
-        message: error.message,
-        code: error.code ?? null,
-        hint: error.hint ?? null,
-        details: error.details ?? null,
-        mode: writeResult.mode,
-        skipped_duplicates: writeResult.skippedDuplicates,
-        sample_order: formattedOrders[0] ?? null,
-      });
-
+      console.error('[sync-orders] 数据库写入失败:', error);
       return NextResponse.json(
-        {
-          error: '数据库写入失败',
-          details: error.message,
-          code: error.code ?? null,
-          hint: error.hint ?? null,
-        },
+        { error: '数据库写入失败', details: error.message },
         { status: 500 }
       );
     }
@@ -271,18 +221,21 @@ export async function GET() {
       ? formattedOrders.slice(0, insertedCount).map((order) => order.external_order_id)
       : [];
 
+    revalidatePath('/admin/orders/dispatch');
+    revalidatePath('/admin/orders');
+
     return NextResponse.json({
       success: true,
       message: `成功同步 ${insertedCount} 条闲管家待发货订单`,
       inserted_count: insertedCount,
       inserted_external_order_ids: insertedExternalOrderIds,
       fetched_count: formattedOrders.length,
-      skipped_duplicates: writeResult.skippedDuplicates,
-      sync_mode: writeResult.mode,
+      skipped_duplicates: formattedOrders.length - insertedCount,
       invalid_orders: invalidOrders,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : '系统异常';
+    console.error('[sync-orders] unhandled error:', message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

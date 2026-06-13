@@ -100,7 +100,9 @@ export default function SyncOrdersButton() {
       }
 
       router.replace(nextParams.toString() ? `${pathname}?${nextParams.toString()}` : pathname, { scroll: false });
-      router.refresh();
+      window.queueMicrotask(() => {
+        router.refresh();
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : '请求发送失败';
       setResult({

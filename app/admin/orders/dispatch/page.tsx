@@ -1,4 +1,4 @@
-import { supabase } from '../../../../lib/supabaseClient';
+import { createClient } from '../../../../lib/supabase/server';
 import type { Equipment, Order } from '../../../actions/types';
 import DispatchConsole from '../../components/DispatchConsole';
 
@@ -9,6 +9,8 @@ export default async function DispatchPage({
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const supabase = await createClient();
+
   const { data: ordersData, error: ordersError } = await supabase
     .from('orders')
     .select('*')

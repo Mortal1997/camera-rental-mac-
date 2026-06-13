@@ -11,6 +11,7 @@ export type Equipment = {
 
 export type Order = {
   id: string;
+  user_id?: string;
   equipment_id?: string;
   external_order_id?: string;
   created_at?: string | null;

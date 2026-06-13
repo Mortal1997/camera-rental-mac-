@@ -300,7 +300,6 @@ export default function DispatchConsole({ orders, equipmentList, highlightedExte
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [draftOrders, setDraftOrders] = useState(orders);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [formValues, setFormValues] = useState<DraftFormState>(() => buildInitialFormState(equipmentList));
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
@@ -331,7 +330,7 @@ export default function DispatchConsole({ orders, equipmentList, highlightedExte
 
   const filteredOrders = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
-    return draftOrders.filter((order) => {
+    return orders.filter((order) => {
       const matchesSearch =
         !term ||
         (order.customer_name ?? '').toLowerCase().includes(term) ||
@@ -345,9 +344,15 @@ export default function DispatchConsole({ orders, equipmentList, highlightedExte
 
       return matchesSearch && matchesPlatform;
     });
-  }, [draftOrders, searchTerm, platformFilter]);
+  }, [orders, searchTerm, platformFilter]);
+
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
+    if (!mounted) return;
     if (activeHighlights.length === 0) return;
 
     const timer = window.setTimeout(() => {
@@ -359,7 +364,7 @@ export default function DispatchConsole({ orders, equipmentList, highlightedExte
     }, 3000);
 
     return () => window.clearTimeout(timer);
-  }, [activeHighlights, pathname, router, searchParams]);
+  }, [activeHighlights, mounted, pathname, router, searchParams]);
 
   const openDrawer = (order: Order) => {
     setSelectedOrder(order);
@@ -409,7 +414,7 @@ export default function DispatchConsole({ orders, equipmentList, highlightedExte
         return;
       }
 
-      setDraftOrders((current) => current.filter((order) => order.id !== selectedOrder.id));
+      router.refresh();
       closeDrawer();
     });
   };
@@ -427,7 +432,7 @@ export default function DispatchConsole({ orders, equipmentList, highlightedExte
         return;
       }
 
-      setDraftOrders((current) => current.filter((order) => order.id !== orderId));
+      router.refresh();
       if (selectedOrder?.id === orderId) {
         closeDrawer();
       }
@@ -447,7 +452,7 @@ export default function DispatchConsole({ orders, equipmentList, highlightedExte
           description="点击卡片或下方按钮打开右侧调度抽屉，可连续编辑租期、收货地址、发货方式、免押方式和设备分配。"
           meta={(
             <div className="flex flex-col items-start gap-3 sm:items-end">
-              <span className="text-sm text-slate-500">{filteredOrders.length} / {draftOrders.length} 单</span>
+              <span className="text-sm text-slate-500">{filteredOrders.length} / {orders.length} 单</span>
               <SyncOrdersButton />
             </div>
           )}
@@ -487,7 +492,7 @@ export default function DispatchConsole({ orders, equipmentList, highlightedExte
         {filteredOrders.length === 0 ? (
           <div className="mt-6">
             <EmptyState>
-              {draftOrders.length === 0
+              {orders.length === 0
                 ? '当前没有可分配的外部平台订单'
                 : '没有符合条件的订单，请调整筛选条件'}
             </EmptyState>

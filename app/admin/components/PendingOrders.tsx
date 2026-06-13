@@ -7,8 +7,8 @@ import { type DateRange } from 'react-day-picker';
 import { bulkCreateOrders, createManualOrder, deleteOrder, updateOrderFields, updateOrderStatus } from '../../actions/admin-actions';
 import type { Equipment, Order } from '../../actions/types';
 import { read, utils, writeFileXLSX } from 'xlsx';
-import { Download, Edit2, FileSpreadsheet, MessageSquare, Package, Plus, Truck, Upload } from 'lucide-react';
-import { DangerButton, EmptyState, FormField, Modal, PrimaryButton, SecondaryButton, SectionHeader, SelectInput, StatBadge, SurfaceCard, TableHead, TableShell, Td, TextInput, Th, Tr } from './ui';
+import { CalendarRange, Download, Edit2, FileSpreadsheet, MapPin, MessageSquare, Package, Phone, Plus, Truck, Upload, User, Wand2 } from 'lucide-react';
+import { cn, DangerButton, EmptyState, FormField, Modal, PrimaryButton, SecondaryButton, SectionHeader, SelectInput, StatBadge, SurfaceCard, TableHead, TableShell, Td, TextInput, Th, Tr } from './ui';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -43,6 +43,98 @@ const initialFormState = {
   deposit_exemption: depositOptions[0],
   total_price: '',
 };
+
+type SmartParseResult = {
+  name: string;
+  phone: string;
+  address: string;
+};
+
+function smartParse(raw: string): SmartParseResult | null {
+  if (!raw.trim()) return null;
+
+  // 第一步：数据清洗 — 去掉常见干扰词前缀
+  const cleaned = raw
+    .replace(/收[件人]?[：:]\s*/gi, '')
+    .replace(/姓名[：:]\s*/gi, '')
+    .replace(/电话[：:]\s*/gi, '')
+    .replace(/手机[：:]\s*/gi, '')
+    .replace(/地址[：:]\s*/gi, '')
+    .replace(/收货[：:]\s*/gi, '')
+    .replace(/收货人[：:]\s*/gi, '')
+    .trim();
+
+  // 第二步：精准抠手机号 — 高容错正则，允许号码前后有非数字
+  const phoneMatch = cleaned.match(/(?:(?:\+|00)86)?\D?(1[3-9]\d{9})\D?/);
+  const phone = phoneMatch ? phoneMatch[1] : '';
+
+  // 从原串中彻底剔除手机号（含前后可能有的符号和空格）
+  let textWithoutPhone = cleaned
+    .replace(phone, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  // 第三步：按空格、逗号、句号、换行符切割
+  const parts = textWithoutPhone
+    .split(/[\s,，.。\n\r]+/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  let name = '';
+  let address = '';
+
+  if (parts.length === 0) {
+    // 兜底：手机号前面的字符片段（到第一个空格/开头截止）为姓名，后面为地址
+    const phoneIdx = cleaned.indexOf(phone);
+    const before = phoneIdx > -1 ? cleaned.slice(0, phoneIdx).trim() : cleaned;
+    const after = phoneIdx > -1 ? cleaned.slice(phoneIdx + phone.length).trim() : '';
+    const beforeParts = before.split(/[\s,，。；:：]+/).filter(Boolean);
+
+    if (beforeParts.length > 0) {
+      name = beforeParts[beforeParts.length - 1]; // 取最后一段（最接近手机号的通常是姓名）
+    }
+    address = after;
+    if (!name || !address) return null;
+    return { name, phone, address };
+  }
+
+  // 第四步：智能判断姓名
+  const addrKeywords = /省|市|区|县|街|路|号|栋|单元|室|楼|弄|巷|村|镇|乡|道|丘|阁|厦|园|苑|城|湾|庄|府|居|邸/;
+  const isLikelyName = (s: string) =>
+    s.length >= 2 &&
+    s.length <= 5 &&
+    !addrKeywords.test(s) &&
+    /^[\u4e00-\u9fa5a-zA-Z·.]+$/.test(s);
+
+  const possibleNames = parts.filter(isLikelyName);
+
+  if (possibleNames.length > 0) {
+    // 取第一个符合姓名特征的片段
+    name = possibleNames[0];
+    const nameSet = new Set(possibleNames);
+    const addressParts = parts.filter((p) => !nameSet.has(p));
+    address = addressParts.join(' ');
+  } else {
+    // 极端情况：完全没有符合姓名的片段
+    // 取最短的片段当姓名，其余拼接为地址
+    const sorted = [...parts].sort((a, b) => a.length - b.length);
+    name = sorted[0];
+    address = sorted.slice(1).join(' ');
+  }
+
+  // 兜底：若地址仍为空，尝试用手机号位置从原串中推算
+  if (!address && phone) {
+    const phoneIdx = cleaned.indexOf(phone);
+    const after = cleaned.slice(phoneIdx + phone.length).trim();
+    address = after || parts.filter((p) => p !== name).join(' ');
+  }
+
+  if (!name || !address) return null;
+
+  return { name, phone, address };
+}
+
+type Toast = { type: 'success' | 'error'; message: string } | null;
 
 type ImportedOrderRecord = {
   rowNumber: number;
@@ -188,7 +280,27 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [formError, setFormError] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const [smartParseText, setSmartParseText] = useState('');
+  const [smartParseToast, setSmartParseToast] = useState<Toast>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleSmartParse = () => {
+    setSmartParseToast(null);
+    const result = smartParse(smartParseText);
+    if (!result) {
+      setSmartParseToast({ type: 'error', message: '未能识别有效信息，请检查格式（姓名+电话+地址）' });
+      return;
+    }
+    setFormValues((prev) => ({
+      ...prev,
+      customer_name: result.name,
+      customer_phone: result.phone,
+      shipping_address: result.address,
+    }));
+    setSmartParseToast({ type: 'success', message: '识别成功，信息已填充' });
+    setSmartParseText('');
+    setTimeout(() => setSmartParseToast(null), 3000);
+  };
 
   const validImportRecords = importPreviewRecords.filter((record) => record.issues.length === 0);
   const invalidImportRecords = importPreviewRecords.filter((record) => record.issues.length > 0);
@@ -476,113 +588,146 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
           <div className="mt-5 rounded-[20px] border border-rose-200/80 bg-rose-50/80 px-4 py-3 text-sm text-rose-600">{importError}</div>
         ) : null}
 
-        <TableShell>
-          {displayOrders.length === 0 ? (
-            <EmptyState>暂无待发货订单</EmptyState>
-          ) : (
-            <table className="w-full min-w-[980px] text-sm">
-              <TableHead>
-                <tr>
-                  <Th>设备</Th>
-                  <Th>平台 / 外部单号</Th>
-                  <Th>客户信息</Th>
-                  <Th>收货地址 / 物流</Th>
-                  <Th>租用时段</Th>
-                  <Th>订单金额</Th>
-                  <Th>操作</Th>
-                </tr>
-              </TableHead>
-              <tbody>
-                {displayOrders.map((order) => (
-                  <Tr key={order.id}>
-                    <Td>
-                      <div className="space-y-0.5">
-                        <p className="font-medium text-slate-900">{order.equipment?.name ?? '—'}</p>
-                        {order.equipment?.serial_number && (
-                          <p className="font-mono text-xs text-slate-400">{order.equipment.serial_number}</p>
+        {displayOrders.length === 0 ? (
+          <EmptyState>暂无待发货订单</EmptyState>
+        ) : (
+          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-5 xl:grid-cols-3 xl:gap-6">
+            {displayOrders.map((order) => {
+              return (
+                <div
+                  key={order.id}
+                  className={cn(
+                    'group flex h-full flex-col rounded-xl border border-slate-200 bg-white p-3 transition-all hover:border-slate-300 hover:shadow-md md:p-4',
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-slate-900 md:text-base">
+                        {order.equipment?.name ?? '—'}
+                      </p>
+                      <p className="mt-0.5 truncate text-xs text-slate-400">
+                        {order.external_order_id || `内部单号：${order.id}`}
+                      </p>
+                    </div>
+                    <StatBadge tone="slate" className="shrink-0">
+                      {order.platform_source || '手动录单'}
+                    </StatBadge>
+                  </div>
+
+                  <div className="mt-3 flex-1 space-y-1.5 text-sm text-slate-600 md:mt-4 md:space-y-2">
+                    <div className="flex items-center gap-2">
+                      <User className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                      <span className="truncate text-sm font-medium text-slate-700">{order.customer_name ?? '—'}</span>
+                      {order.customer_phone ? (
+                        <a
+                          href={`tel:${order.customer_phone}`}
+                          className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-indigo-600"
+                        >
+                          <Phone className="h-3.5 w-3.5" />
+                          {order.customer_phone}
+                        </a>
+                      ) : (
+                        <span className="text-sm text-slate-400">—</span>
+                      )}
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+                      <span className="line-clamp-2 text-sm text-slate-600" title={order.shipping_address || '—'}>
+                        {order.shipping_address || '—'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <CalendarRange className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                      <span className="text-sm text-slate-600">
+                        {formatDateRange(order.start_date, order.end_date)}
+                      </span>
+                    </div>
+                    {order.notes ? (
+                      <div className="flex items-start gap-2 rounded-lg bg-slate-50 px-2 py-1.5">
+                        <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+                        <span className="line-clamp-2 text-xs italic text-slate-500" title={order.notes}>
+                          {order.notes}
+                        </span>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-auto flex items-center justify-between border-t border-slate-100 pt-3 md:pt-4">
+                    <span className="text-xs text-slate-400 md:text-sm">订单金额</span>
+                    <span className="text-base font-semibold text-slate-900 md:text-lg">
+                      {formatCurrency(order.total_price)}
+                    </span>
+                  </div>
+
+                  <div className="mt-3 flex flex-col gap-2 border-t border-slate-100 pt-3 md:pt-4">
+                    <div className="flex items-center gap-2">
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => openEditDialog(order)}
+                              className="text-slate-500 hover:text-slate-900"
+                            >
+                              <Edit2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="left">编辑订单信息</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                      <button
+                        type="button"
+                        onClick={() => { setSfDialogOrderId(order.id); setSfPickupTime(''); }}
+                        disabled={sfLoadingStates[order.id] || isPending}
+                        className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {sfLoadingStates[order.id] ? (
+                          <>
+                            <svg className="h-3.5 w-3.5 animate-spin text-slate-400" viewBox="0 0 24 24" fill="none">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                            </svg>
+                            下单中...
+                          </>
+                        ) : (
+                          <>
+                            <Truck className="h-3.5 w-3.5 text-indigo-500" />
+                            顺丰一键下单
+                          </>
                         )}
-                      </div>
-                    </Td>
-                    <Td>
-                      <div className="space-y-1">
-                        <StatBadge tone="slate">{order.platform_source || '手动录单'}</StatBadge>
-                        <p className="text-xs text-slate-400">{order.external_order_id || `内部单号：${order.id}`}</p>
-                      </div>
-                    </Td>
-                    <Td>
-                      <div className="space-y-1">
-                        <p className="text-sm font-medium text-slate-900">{order.customer_name ?? '—'}</p>
-                        <p className="text-sm text-slate-500">{order.customer_phone ?? '—'}</p>
-                      </div>
-                    </Td>
-                    <Td>
-                      <div className="space-y-1">
-                        <p className="max-w-[140px] truncate text-sm text-slate-700 sm:max-w-[200px]" title={order.shipping_address || '—'}>
-                          {order.shipping_address || '—'}
-                        </p>
-                        <p className="text-xs text-slate-400">{order.shipping_method || '待确认发货方式'}</p>
-                        {order.notes ? (
-                          <p className="mt-1 flex max-w-[200px] items-start gap-1 truncate text-xs text-slate-400" title={order.notes}>
-                            <MessageSquare className="mt-0.5 h-3 w-3 shrink-0 text-slate-300" />
-                            <span className="truncate italic">{order.notes}</span>
-                          </p>
-                        ) : null}
-                      </div>
-                    </Td>
-                    <Td className="text-slate-600">{formatDateRange(order.start_date, order.end_date)}</Td>
-                    <Td className="font-semibold text-slate-900">{formatCurrency(order.total_price)}</Td>
-                    <Td>
-                      <div className="flex flex-col gap-2">
-                        <div className="flex items-center gap-2">
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon-sm"
-                                  onClick={() => openEditDialog(order)}
-                                  className="text-slate-500 hover:text-slate-900"
-                                >
-                                  <Edit2 className="h-3.5 w-3.5" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent side="left">编辑订单信息</TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                          <button
-                            type="button"
-                            onClick={() => { setSfDialogOrderId(order.id); setSfPickupTime(''); }}
-                            disabled={sfLoadingStates[order.id] || isPending}
-                            className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {sfLoadingStates[order.id] ? (
-                              <><svg className="h-3.5 w-3.5 animate-spin text-slate-400" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>下单中...</>
-                            ) : (
-                              <><Truck className="h-3.5 w-3.5 text-indigo-500" />顺丰一键下单</>
-                            )}
-                          </button>
-                        </div>
-                        <TextInput
-                          type="text"
-                          placeholder="运单号"
-                          value={trackingInputs[order.id] ?? ''}
-                          onChange={(e) => setTrackingInputs((prev) => ({ ...prev, [order.id]: e.target.value }))}
-                          className="w-40 !py-2 text-xs"
-                        />
-                        <div className="flex items-center gap-2">
-                          <PrimaryButton onClick={() => handleShip(order.id)} disabled={isPending} className="text-xs">
-                            <Truck className="h-3.5 w-3.5" />发货
-                          </PrimaryButton>
-                          <DangerButton onClick={() => setDeleteDialogOrderId(order.id)} disabled={isPending}>删除</DangerButton>
-                        </div>
-                      </div>
-                    </Td>
-                  </Tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </TableShell>
+                      </button>
+                    </div>
+                    <TextInput
+                      type="text"
+                      placeholder="运单号"
+                      value={trackingInputs[order.id] ?? ''}
+                      onChange={(e) => setTrackingInputs((prev) => ({ ...prev, [order.id]: e.target.value }))}
+                      className="w-full !py-2 text-xs"
+                    />
+                    <div className="flex items-center gap-2">
+                      <PrimaryButton
+                        onClick={() => handleShip(order.id)}
+                        disabled={isPending}
+                        className="w-full text-xs"
+                      >
+                        <Truck className="h-3.5 w-3.5" />
+                        发货
+                      </PrimaryButton>
+                      <DangerButton
+                        onClick={() => setDeleteDialogOrderId(order.id)}
+                        disabled={isPending}
+                        className="shrink-0 text-xs"
+                      >
+                        删除
+                      </DangerButton>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </SurfaceCard>
 
       <Modal
@@ -597,12 +742,54 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
             {formError && (
               <div className="w-full rounded-[20px] border border-rose-200/80 bg-rose-50/80 px-4 py-3 text-sm text-rose-600">{formError}</div>
             )}
+            {smartParseToast && (
+              <div className={`w-full rounded-[20px] px-4 py-2.5 text-sm font-medium ${
+                smartParseToast.type === 'success'
+                  ? 'border border-emerald-200/80 bg-emerald-50/80 text-emerald-700'
+                  : 'border border-rose-200/80 bg-rose-50/80 text-rose-600'
+              }`}>
+                {smartParseToast.message}
+              </div>
+            )}
             <SecondaryButton onClick={closeModal} disabled={isPending}>取消</SecondaryButton>
             <PrimaryButton onClick={handleCreateOrder} disabled={isPending || equipmentList.length === 0}>{isPending ? '创建中...' : '确认创建'}</PrimaryButton>
           </div>
         }
       >
-        <div className="grid gap-5 md:grid-cols-2">
+        <div className="grid gap-3 md:gap-5 md:grid-cols-2">
+          {/* Smart parse block */}
+          <FormField label="智能识别" className="md:col-span-2">
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <textarea
+                rows={2}
+                placeholder="请粘贴包含姓名、电话、收货地址的完整文本，例如：张三，138xxxx8888，广东省深圳市南山区某某街道123号"
+                value={smartParseText}
+                onChange={(e) => setSmartParseText(e.target.value)}
+                className="min-h-[60px] flex-1 resize-none rounded-2xl border border-border bg-background px-3 py-2 text-xs md:text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              />
+              <button
+                type="button"
+                onClick={handleSmartParse}
+                disabled={!smartParseText.trim()}
+                className="flex items-center justify-center gap-1.5 rounded-2xl bg-indigo-500 px-3 py-2 md:px-4 text-xs md:text-sm font-medium text-white transition-colors hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-40 shrink-0"
+              >
+                <Wand2 className="h-3.5 w-3.5 md:h-4 md:w-4" />
+                一键识别
+              </button>
+            </div>
+            {smartParseToast && (
+              <div
+                className={`mt-2 rounded-[20px] px-4 py-2.5 text-sm font-medium ${
+                  smartParseToast.type === 'success'
+                    ? 'border border-emerald-200/80 bg-emerald-50/80 text-emerald-700'
+                    : 'border border-rose-200/80 bg-rose-50/80 text-rose-600'
+                }`}
+              >
+                {smartParseToast.message}
+              </div>
+            )}
+          </FormField>
+
           <FormField label="设备选择" className="md:col-span-2">
             <SelectInput
               value={formValues.equipment_id}
@@ -696,18 +883,18 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
           </div>
         }
       >
-        <div className="grid gap-4 md:grid-cols-3">
-          <div className="rounded-[22px] border border-slate-200/70 bg-white/76 p-4">
-            <p className="text-sm text-slate-500">总记录</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900">{importPreviewRecords.length}</p>
+        <div className="grid gap-3 md:gap-4 md:grid-cols-3">
+          <div className="rounded-[22px] border border-slate-200/70 bg-white/76 p-3 md:p-4">
+            <p className="text-xs md:text-sm text-slate-500">总记录</p>
+            <p className="mt-1.5 md:mt-2 text-xl md:text-2xl font-semibold text-slate-900">{importPreviewRecords.length}</p>
           </div>
-          <div className="rounded-[22px] border border-emerald-200/70 bg-emerald-50/72 p-4">
-            <p className="text-sm text-emerald-700">有效记录</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900">{validImportRecords.length}</p>
+          <div className="rounded-[22px] border border-emerald-200/70 bg-emerald-50/72 p-3 md:p-4">
+            <p className="text-xs md:text-sm text-emerald-700">有效记录</p>
+            <p className="mt-1.5 md:mt-2 text-xl md:text-2xl font-semibold text-slate-900">{validImportRecords.length}</p>
           </div>
-          <div className="rounded-[22px] border border-amber-200/70 bg-amber-50/72 p-4">
-            <p className="text-sm text-amber-700">无效记录</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900">{invalidImportRecords.length}</p>
+          <div className="rounded-[22px] border border-amber-200/70 bg-amber-50/72 p-3 md:p-4">
+            <p className="text-xs md:text-sm text-amber-700">无效记录</p>
+            <p className="mt-1.5 md:mt-2 text-xl md:text-2xl font-semibold text-slate-900">{invalidImportRecords.length}</p>
           </div>
         </div>
 
@@ -718,15 +905,16 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
         ) : null}
 
         <TableShell>
-          <table className="w-full min-w-[980px] text-sm">
+          <div className="overflow-x-auto -mx-3 px-3 md:mx-0 md:px-0">
+          <table className="w-full min-w-[760px] text-xs md:text-sm">
             <TableHead>
               <tr>
                 <Th>Excel 行</Th>
                 <Th>客户姓名</Th>
                 <Th>联系电话</Th>
                 <Th>收货地址</Th>
-                <Th>租期</Th>
-                <Th>金额</Th>
+                <Th className="hidden md:table-cell">租期</Th>
+                <Th className="hidden sm:table-cell">金额</Th>
                 <Th>校验结果</Th>
               </tr>
             </TableHead>
@@ -736,9 +924,9 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
                   <Td>第 {record.rowNumber} 行</Td>
                   <Td className="font-medium text-slate-900">{record.customer_name || '—'}</Td>
                   <Td>{record.customer_phone || '—'}</Td>
-                  <Td className="max-w-[240px] truncate" title={record.shipping_address || '—'}>{record.shipping_address || '—'}</Td>
-                  <Td>{formatDateRange(record.start_date, record.end_date)}</Td>
-                  <Td className="font-semibold text-slate-900">{formatCurrency(record.total_price)}</Td>
+                  <Td className="max-w-[160px] md:max-w-[240px] truncate" title={record.shipping_address || '—'}>{record.shipping_address || '—'}</Td>
+                  <Td className="hidden md:table-cell">{formatDateRange(record.start_date, record.end_date)}</Td>
+                  <Td className="hidden sm:table-cell font-semibold text-slate-900">{formatCurrency(record.total_price)}</Td>
                   <Td>
                     {record.issues.length === 0 ? (
                       <StatBadge tone="emerald">可导入</StatBadge>
@@ -753,18 +941,19 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
               ))}
             </tbody>
           </table>
+          </div>
         </TableShell>
       </Modal>
 
       {sfToast && (
         <div
-          className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl border px-5 py-4 text-sm font-medium shadow-xl transition-all ${
+          className={`fixed bottom-4 right-4 left-4 sm:left-auto z-50 flex items-center gap-2 sm:gap-3 rounded-2xl border px-3 py-2.5 sm:px-5 sm:py-4 text-xs sm:text-sm font-medium shadow-xl transition-all ${
             sfToast.type === 'success'
               ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
               : 'border-rose-200 bg-rose-50 text-rose-700'
           }`}
         >
-          <span className={`inline-block h-2 w-2 rounded-full ${sfToast.type === 'success' ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+          <span className={`inline-block h-2 w-2 rounded-full shrink-0 ${sfToast.type === 'success' ? 'bg-emerald-400' : 'bg-rose-400'}`} />
           {sfToast.message}
         </div>
       )}
