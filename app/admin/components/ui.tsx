@@ -204,8 +204,8 @@ export function Modal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/18 px-3 py-4 backdrop-blur-md sm:px-4 sm:py-8">
-      <div className={cn('max-h-[calc(100vh-2rem)] w-full overflow-hidden rounded-[32px] border border-border/70 bg-card shadow-sm sm:max-h-[calc(100vh-4rem)]', maxWidthClassName)}>
-        <div className="flex items-start justify-between gap-4 border-b border-border/70 px-4 py-4 sm:px-6 sm:py-5">
+      <div className={cn('flex h-[100dvh] max-h-[100dvh] w-full flex-col overflow-hidden rounded-[32px] border border-border/70 bg-card shadow-sm sm:h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-2rem)]', maxWidthClassName)}>
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border/70 px-4 py-4 sm:px-6 sm:py-5">
           <div className="min-w-0 flex-1">
             {eyebrow ? (
               <div className="inline-flex items-center gap-2 rounded-full bg-muted px-2.5 py-1">
@@ -224,8 +224,8 @@ export function Modal({
           </button>
         </div>
 
-        <div className="max-h-[calc(100vh-9rem)] overflow-y-auto px-4 py-5 sm:max-h-[calc(100vh-11rem)] sm:px-6 sm:py-6">{children}</div>
-        {footer ? <div className="border-t border-border/70 px-4 py-4 sm:px-6 sm:py-5">{footer}</div> : null}
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-6">{children}</div>
+        {footer ? <div className="shrink-0 border-t border-border/70 bg-card px-4 py-4 sm:px-6 sm:py-5">{footer}</div> : null}
       </div>
     </div>
   );
@@ -253,7 +253,7 @@ export function Drawer({
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/18 backdrop-blur-sm">
       <button type="button" aria-label="关闭抽屉遮罩" className="flex-1" onClick={onClose} />
-      <div className="relative flex h-screen w-full max-w-3xl flex-col overflow-hidden border-l border-border/70 bg-card shadow-2xl">
+      <div className="relative flex h-[100dvh] max-h-[100dvh] w-full max-w-3xl flex-col overflow-hidden border-l border-border/70 bg-card shadow-2xl">
         <div className="shrink-0 border-b border-border/70 bg-card/96 px-4 py-4 backdrop-blur-sm sm:px-6 sm:py-5">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0 flex-1">
@@ -276,7 +276,7 @@ export function Drawer({
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto bg-muted/25 px-4 py-5 sm:px-6 sm:py-6">{children}</div>
         {footer ? (
-          <div className="sticky bottom-0 shrink-0 border-t border-border/70 bg-card/96 px-4 py-4 backdrop-blur-sm sm:px-6 sm:py-5">
+          <div className="shrink-0 border-t border-border/70 bg-card/96 px-4 py-4 backdrop-blur-sm sm:px-6 sm:py-5">
             {footer}
           </div>
         ) : null}

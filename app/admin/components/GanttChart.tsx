@@ -678,7 +678,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
                 {actionError || sfError || copyMessage}
               </p>
             ) : null}
-            <div className="flex flex-wrap justify-end gap-2">
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end sm:gap-3">
               {!isEditing ? (
                 <>
                   <Button variant="outline" size="sm" onClick={openEditMode} className="gap-1.5 rounded-full border-indigo-200 text-indigo-700 hover:bg-indigo-50 hover:border-indigo-300">

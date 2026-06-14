@@ -525,11 +525,12 @@ export default function DispatchConsole({ orders, equipmentList, highlightedExte
             {formError ? (
               <div className="rounded-2xl border border-rose-200/80 bg-rose-50/80 px-4 py-3 text-sm text-rose-600">{formError}</div>
             ) : null}
-            <div className="flex flex-wrap justify-end gap-3">
-              <SecondaryButton onClick={closeDrawer} disabled={isPending}>取消</SecondaryButton>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end sm:gap-3">
+              <SecondaryButton onClick={closeDrawer} disabled={isPending} className="w-full sm:w-auto">取消</SecondaryButton>
               <PrimaryButton
                 onClick={handleSubmit}
                 disabled={isPending}
+                className="w-full sm:w-auto"
               >
                 {isPending ? '处理中...' : '确认接单'}
               </PrimaryButton>
