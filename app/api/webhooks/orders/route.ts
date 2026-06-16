@@ -129,7 +129,7 @@ export async function POST(request: NextRequest) {
       payload = await request.json();
     } catch {
       log('解析 JSON 失败');
-      return NextResponse.json({ error: '无效的 JSON 数据' }, { status: 400 });
+      return NextResponse.json({ result: 'fail', msg: '无效的 JSON 数据' }, { status: 400 });
     }
 
     log('Payload 解析成功', { code: payload.code, hasData: !!payload.data });
@@ -137,7 +137,7 @@ export async function POST(request: NextRequest) {
     if (payload.code !== 0 && payload.code !== undefined) {
       log('闲管家推送错误', { code: payload.code, msg: payload.msg });
       return NextResponse.json(
-        { error: payload.msg || '闲管家推送错误', code: payload.code },
+        { result: 'fail', msg: payload.msg || '闲管家推送错误' },
         { status: 400 }
       );
     }
@@ -148,9 +148,8 @@ export async function POST(request: NextRequest) {
       log('无法提取商户标识', payload);
       return NextResponse.json(
         {
-          error: '无法识别商户身份',
-          hint: 'Webhook payload 中缺少 app_key / appid / seller_id 字段',
-          received_fields: Object.keys(payload),
+          result: 'fail',
+          msg: '无法识别商户身份',
         },
         { status: 400 }
       );
@@ -166,18 +165,17 @@ export async function POST(request: NextRequest) {
 
     if (settingsError) {
       log('查询 user_settings 失败', settingsError);
-      return NextResponse.json({ error: '查询租户配置失败' }, { status: 500 });
+      return NextResponse.json({ result: 'fail', msg: '查询租户配置失败' }, { status: 200 });
     }
 
     if (!settings) {
       log('未找到匹配的租户配置', { merchantId });
       return NextResponse.json(
         {
-          error: '未找到对应的租户配置',
-          hint: `系统中未配置 app_key: ${merchantId}，请在系统设置中绑定闲管家凭证`,
-          code: 'TENANT_NOT_FOUND',
+          result: 'fail',
+          msg: `未找到对应的租户配置，app_key: ${merchantId}`,
         },
-        { status: 404 }
+        { status: 200 }
       );
     }
 
@@ -188,11 +186,7 @@ export async function POST(request: NextRequest) {
 
     if (orderList.length === 0) {
       log('推送数据为空');
-      return NextResponse.json({
-        success: true,
-        message: '推送数据为空',
-        processed_count: 0,
-      });
+      return NextResponse.json({ result: 'success', msg: '接收成功' }, { status: 200 });
     }
 
     const formattedResults = orderList.map((order) => buildOrderPayload(order, userId));
@@ -206,11 +200,7 @@ export async function POST(request: NextRequest) {
 
     if (validOrders.length === 0) {
       log('订单数据格式异常，未写入', { invalidCount: invalidOrders.length });
-      return NextResponse.json({
-        success: true,
-        message: '订单数据格式异常，未写入任何订单',
-        invalid_orders: invalidOrders,
-      });
+      return NextResponse.json({ result: 'success', msg: '接收成功' }, { status: 200 });
     }
 
     log('写入数据库', { orderCount: validOrders.length });
@@ -225,7 +215,7 @@ export async function POST(request: NextRequest) {
 
     if (upsertError) {
       log('数据库写入失败', upsertError);
-      return NextResponse.json({ error: '数据库写入失败', details: upsertError.message }, { status: 500 });
+      return NextResponse.json({ result: 'fail', msg: upsertError.message || '数据库写入失败' }, { status: 200 });
     }
 
     const insertedCount = upsertedData?.length ?? 0;
@@ -236,18 +226,10 @@ export async function POST(request: NextRequest) {
     revalidatePath('/admin/orders/dispatch');
     revalidatePath('/admin/orders');
 
-    return NextResponse.json({
-      success: true,
-      message: `处理完成：写入 ${insertedCount} 条，跳过 ${skippedCount} 条重复订单`,
-      processed_count: orderList.length,
-      inserted_count: insertedCount,
-      skipped_duplicates: skippedCount,
-      invalid_orders: invalidOrders,
-      tenant_id: userId,
-    });
+    return NextResponse.json({ result: 'success', msg: '接收成功' }, { status: 200 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : '系统异常';
+    const message = error instanceof Error ? error.message : '内部处理失败';
     console.error(`[webhook/orders][${requestId}] unhandled error:`, message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ result: 'fail', msg: message || '内部处理失败' }, { status: 200 });
   }
 }
