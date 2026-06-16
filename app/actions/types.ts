@@ -5,7 +5,7 @@ export type Equipment = {
   serial_number?: string;
   daily_fee: number;
   deposit: number;
-  status: 'available' | 'maintenance' | 'rented';
+  status: 'available' | 'maintenance' | 'rented' | 'pending';
   warranty_expire_date?: string;
 };
 

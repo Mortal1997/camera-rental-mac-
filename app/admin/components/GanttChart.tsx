@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clipboard,
+  Clock,
   Edit2,
   Loader2,
   MapPin,
@@ -111,7 +112,8 @@ function getStatusPill(status: string) {
 function getEquipmentStatusBadge(status: EquipmentWithOrders['status']) {
   if (status === 'available') return { label: '闲置', icon: CheckCircle2, tone: 'bg-green-500 text-white' };
   if (status === 'rented') return { label: '租用中', icon: Package2, tone: 'bg-orange-500 text-white' };
-  return { label: '待发货', icon: Wrench, tone: 'bg-blue-500 text-white' };
+  if (status === 'pending') return { label: '待发货', icon: Clock, tone: 'bg-blue-500 text-white' };
+  return { label: '维护中', icon: Wrench, tone: 'bg-slate-500 text-white' };
 }
 
 function getOrderStatusKey(status: Order['status']) {
