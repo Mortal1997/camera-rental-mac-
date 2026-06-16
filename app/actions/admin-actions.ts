@@ -434,6 +434,7 @@ export async function updateOrderStatus(
   orderId: string,
   newStatus: string,
   trackingNumber?: string,
+  shippingMethod?: 'express' | 'hainter' | 'pickup',
   equipmentId?: string
 ): Promise<{ success: boolean; error?: string }> {
   await requireAuth();
@@ -442,6 +443,9 @@ export async function updateOrderStatus(
   const updates: Record<string, unknown> = { status: newStatus };
   if (trackingNumber !== undefined) {
     updates.tracking_number = trackingNumber;
+  }
+  if (shippingMethod !== undefined) {
+    updates.shipping_method = shippingMethod;
   }
 
   const { error } = await supabase

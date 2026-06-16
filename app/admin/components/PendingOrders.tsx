@@ -331,7 +331,7 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
   const handleShip = (orderId: string) => {
     const trackingNumber = trackingInputs[orderId]?.trim();
     startTransition(async () => {
-      const result = await updateOrderStatus(orderId, 'using', trackingNumber || undefined);
+      const result = await updateOrderStatus(orderId, 'using', trackingNumber || undefined, 'express');
       if (!result.success) {
         setFormError(result.error ?? '发货失败，请稍后重试');
         return;

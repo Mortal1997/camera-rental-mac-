@@ -247,6 +247,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
   const [trackingNumberInput, setTrackingNumberInput] = useState('');
   const [confirmShip, setConfirmShip] = useState(false);
+  const [shipMethod, setShipMethod] = useState<'express' | 'hainter' | 'pickup'>('express');
   const [isPending, startTransition] = useTransition();
   const dragStateRef = useRef({ isDown: false, startX: 0, scrollLeft: 0 });
   const [resizableWidth, setResizableWidth] = useState(DEFAULT_STICKY_COLUMN_WIDTH);
@@ -356,7 +357,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
 
   const handleStatusAction = () => {
     if (!selectedOrder || !nextStatusAction) return;
-    if (nextStatusAction.requireTracking && !trackingNumberInput.trim()) {
+    if (nextStatusAction.requireTracking && shipMethod === 'express' && !trackingNumberInput.trim()) {
       setActionError('请先填写运单号');
       return;
     }
@@ -366,6 +367,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
         selectedOrder.order.id,
         nextStatusAction.nextStatus,
         nextStatusAction.requireTracking ? trackingNumberInput.trim() : undefined,
+        shipMethod
       );
 
       if (!result.success) {
@@ -672,6 +674,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
                                   setCopyMessage(null);
                                   setConfirmShip(false);
                                   setTrackingNumberInput(order.tracking_number || '');
+                                  setShipMethod('express');
                                   setSelectedOrder({ order, equipmentId: item.id, equipmentName: item.name, category: item.category });
                                 }}
                                 className="block h-full w-full text-left outline-none"
@@ -773,39 +776,101 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
         }
       >
         {selectedOrder ? (
-          <div className="space-y-5">
-            <div className="flex flex-wrap items-center gap-3">
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
               {currentStatus ? <StatBadge tone={currentStatus.tone}>{currentStatus.label}</StatBadge> : null}
               <StatBadge tone="slate">订单号：{selectedOrder.order.id}</StatBadge>
               {selectedOrder.category ? <StatBadge tone="slate">分类：{selectedOrder.category}</StatBadge> : null}
             </div>
 
             {nextStatusAction?.requireTracking && !isEditing ? (
-              <div className="space-y-3 rounded-2xl bg-amber-50 p-4">
+              <div className="space-y-2 rounded-2xl bg-amber-50 p-3">
                 <div className="flex items-center gap-2 text-amber-700">
                   <Truck className="h-4 w-4" />
-                  <p className="text-sm font-semibold">发货前请录入运单号</p>
+                  <p className="text-sm font-semibold">发货方式</p>
                 </div>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
-                  <div className="flex-1">
-                    <TextInput
-                      value={trackingNumberInput}
-                      onChange={(e) => { setTrackingNumberInput(e.target.value); if (confirmShip) setConfirmShip(false); }}
-                      placeholder="请输入顺丰 / 京东 / 菜鸟等运单号"
-                    />
-                  </div>
-                  <Button
-                    variant="default"
-                    size="sm"
-                    onClick={handleSfOneClick}
-                    disabled={sfLoading}
-                    className="shrink-0 gap-1.5 rounded-2xl bg-indigo-600 px-4 py-3 text-[13px] font-medium text-white shadow-sm transition-all hover:bg-indigo-500 active:scale-[0.98] disabled:opacity-60"
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setShipMethod('express'); setConfirmShip(false); }}
+                    className={cn(
+                      'flex flex-1 items-center justify-center gap-2 rounded-xl border-2 px-3 py-2 text-[13px] font-medium transition-all',
+                      shipMethod === 'express'
+                        ? 'border-amber-400 bg-white text-amber-700 shadow-sm'
+                        : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'
+                    )}
                   >
-                    {sfLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                    顺丰一键下单
-                  </Button>
+                    <Truck className="h-4 w-4" />
+                    快递
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShipMethod('hainter'); setTrackingNumberInput(''); setConfirmShip(false); }}
+                    className={cn(
+                      'flex flex-1 items-center justify-center gap-2 rounded-xl border-2 px-3 py-2 text-[13px] font-medium transition-all',
+                      shipMethod === 'hainter'
+                        ? 'border-amber-400 bg-white text-amber-700 shadow-sm'
+                        : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'
+                    )}
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                    跑腿
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShipMethod('pickup'); setTrackingNumberInput(''); setConfirmShip(false); }}
+                    className={cn(
+                      'flex flex-1 items-center justify-center gap-2 rounded-xl border-2 px-3 py-2 text-[13px] font-medium transition-all',
+                      shipMethod === 'pickup'
+                        ? 'border-amber-400 bg-white text-amber-700 shadow-sm'
+                        : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'
+                    )}
+                  >
+                    <UserRound className="h-4 w-4" />
+                    自提
+                  </button>
                 </div>
-                <label className="flex items-start gap-3 rounded-2xl bg-white px-3 py-3 text-sm text-slate-700">
+
+                {shipMethod === 'express' && (
+                  <div className="space-y-2">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+                      <div className="flex-1">
+                        <TextInput
+                          value={trackingNumberInput}
+                          onChange={(e) => { setTrackingNumberInput(e.target.value); if (confirmShip) setConfirmShip(false); }}
+                          placeholder="请输入顺丰 / 京东 / 菜鸟等运单号"
+                        />
+                      </div>
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={handleSfOneClick}
+                        disabled={sfLoading}
+                        className="shrink-0 gap-1.5 rounded-2xl bg-indigo-600 px-4 py-3 text-[13px] font-medium text-white shadow-sm transition-all hover:bg-indigo-500 active:scale-[0.98] disabled:opacity-60"
+                      >
+                        {sfLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                        顺丰一键下单
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {shipMethod === 'hainter' && (
+                  <div className="space-y-2">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+                      <div className="flex-1">
+                        <TextInput
+                          value={trackingNumberInput}
+                          onChange={(e) => { setTrackingNumberInput(e.target.value); if (confirmShip) setConfirmShip(false); }}
+                          placeholder="请输入跑腿运单号（选填）"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <label className="flex items-start gap-3 rounded-xl bg-white px-3 py-2.5 text-sm text-slate-700">
                   <input
                     type="checkbox"
                     checked={confirmShip}
@@ -814,14 +879,14 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
                   />
                   <span className="flex items-start gap-2">
                     <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                    我已确认客户信息、收货地址和运单号无误，立即执行发货。
+                    我已确认客户信息、收货地址无误，立即执行发货。
                   </span>
                 </label>
               </div>
             ) : null}
 
             {isEditing ? (
-              <div className="space-y-4 rounded-2xl border border-indigo-200 bg-indigo-50/50 p-5">
+              <div className="space-y-3 rounded-2xl border border-indigo-200 bg-indigo-50/50 p-4">
                 <p className="flex items-center gap-2 text-sm font-semibold text-indigo-700">
                   <Edit2 className="h-4 w-4" />编辑订单信息
                 </p>
@@ -885,9 +950,9 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
               </div>
             ) : (
               <>
-                <InfoTile className="p-4">
+                <InfoTile className="p-3">
                   <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">订单信息</p>
-                  <div className="mt-3 grid gap-3 text-sm text-slate-700 sm:grid-cols-2">
+                  <div className="mt-2 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
                     <div className="flex items-start justify-between gap-3">
                       <span className="text-slate-400">设备</span>
                       <span className="text-right font-medium">{selectedOrder.equipmentName}</span>
@@ -916,17 +981,17 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
                 </InfoTile>
 
                 <div className="grid gap-4 md:grid-cols-2">
-                  <InfoTile className="p-4">
+                  <InfoTile className="p-3">
                     <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">物流信息</p>
-                    <div className="mt-3 space-y-3 text-sm text-slate-700">
+                    <div className="mt-2 space-y-2 text-sm text-slate-700">
                       <div className="flex items-center justify-between gap-3"><span className="text-slate-400">运单号</span><span className="font-medium">{selectedOrder.order.tracking_number || '暂未录入'}</span></div>
                       <div className="flex items-center justify-between gap-3"><span className="text-slate-400">免押方式</span><span className="font-medium">{selectedOrder.order.deposit_exemption || '—'}</span></div>
                     </div>
                   </InfoTile>
 
-                  <InfoTile className="p-4">
+                  <InfoTile className="p-3">
                     <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">费用信息</p>
-                    <div className="mt-3 space-y-3 text-sm text-slate-700">
+                    <div className="mt-2 space-y-2 text-sm text-slate-700">
                       <div className="flex items-center justify-between gap-3"><span className="text-slate-400">订单金额</span><span className="font-medium">¥{Number(selectedOrder.order.total_price || 0).toFixed(2)}</span></div>
                       <div className="flex items-center justify-between gap-3"><span className="text-slate-400">已付押金</span><span className="font-medium">¥{Number(selectedOrder.order.deposit_paid || 0).toFixed(2)}</span></div>
                     </div>
@@ -934,14 +999,14 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
                 </div>
 
                 {selectedOrder.order.notes ? (
-                  <InfoTile className="p-4">
+                  <InfoTile className="p-3">
                     <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">订单备注</p>
-                    <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{selectedOrder.order.notes}</p>
+                    <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{selectedOrder.order.notes}</p>
                   </InfoTile>
                 ) : (
-                  <InfoTile className="p-4">
+                  <InfoTile className="p-3">
                     <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">订单备注</p>
-                    <p className="mt-3 text-sm text-muted-foreground">暂无备注</p>
+                    <p className="mt-2 text-sm text-muted-foreground">暂无备注</p>
                   </InfoTile>
                 )}
               </>

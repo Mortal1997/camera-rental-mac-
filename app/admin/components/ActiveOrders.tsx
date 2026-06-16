@@ -57,7 +57,7 @@ export default function ActiveOrders({ orders }: ActiveOrdersProps) {
   const handleReturn = (orderId: string, equipmentId?: string) => {
     setError(null);
     startTransition(async () => {
-      const result = await updateOrderStatus(orderId, 'returned', undefined, equipmentId);
+      const result = await updateOrderStatus(orderId, 'returned', undefined, undefined, equipmentId);
       if (!result.success) {
         setError(result.error ?? '确认归还失败，请稍后重试');
         return;
