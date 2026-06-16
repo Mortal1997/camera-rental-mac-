@@ -1,11 +1,13 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { Camera, Loader2 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { signInWithPassword, signUp, type AuthResult } from './actions';
+
+const REMEMBERED_EMAIL_KEY = 'rememberedEmail';
 
 function InputField({
   id,
@@ -13,12 +15,16 @@ function InputField({
   type = 'text',
   placeholder,
   autoComplete,
+  value,
+  onChange,
 }: {
   id: string;
   label: string;
   type?: string;
   placeholder?: string;
   autoComplete?: string;
+  value?: string;
+  onChange?: (value: string) => void;
 }) {
   return (
     <div className="space-y-1.5">
@@ -31,6 +37,8 @@ function InputField({
         type={type}
         autoComplete={autoComplete}
         placeholder={placeholder}
+        value={value}
+        onChange={(event) => onChange?.(event.target.value)}
         required
         className="h-10 w-full rounded-xl border border-input bg-background px-4 py-3 text-[14px] text-foreground shadow-sm transition-all outline-none placeholder:text-muted-foreground focus:border-foreground/30 focus:ring-2 focus:ring-foreground/10 disabled:cursor-not-allowed disabled:opacity-50"
       />
@@ -45,9 +53,22 @@ function AuthForm({
   mode: 'login' | 'register';
   onSuccess?: () => void;
 }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const remembered = window.localStorage.getItem(REMEMBERED_EMAIL_KEY);
+    if (remembered) {
+      setEmail(remembered);
+      setRememberMe(true);
+    }
+  }, []);
 
   function handleSubmit(formData: FormData) {
     setError(null);
@@ -61,6 +82,11 @@ function AuthForm({
         if (mode === 'register') {
           setSuccess('注册成功');
         } else {
+          if (rememberMe) {
+            window.localStorage.setItem(REMEMBERED_EMAIL_KEY, email);
+          } else {
+            window.localStorage.removeItem(REMEMBERED_EMAIL_KEY);
+          }
           onSuccess?.();
         }
       } else {
@@ -69,12 +95,14 @@ function AuthForm({
     });
   }
 
+  const resolvedConfirmPassword = mode === 'register' ? confirmPassword : undefined;
+
   return (
     <form action={handleSubmit} className="space-y-4">
-      <InputField id="email" label="邮箱" type="email" placeholder="your@email.com" autoComplete="email" />
-      <InputField id="password" label="密码" type="password" placeholder="••••••••" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
+      <InputField id="email" label="邮箱" type="email" placeholder="your@email.com" autoComplete="email" value={email} onChange={setEmail} />
+      <InputField id="password" label="密码" type="password" placeholder="••••••••" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} value={password} onChange={setPassword} />
       {mode === 'register' && (
-        <InputField id="confirmPassword" label="确认密码" type="password" placeholder="••••••••" autoComplete="new-password" />
+        <InputField id="confirmPassword" label="确认密码" type="password" placeholder="••••••••" autoComplete="new-password" value={resolvedConfirmPassword} onChange={setConfirmPassword} />
       )}
 
       {error && (
@@ -87,6 +115,20 @@ function AuthForm({
         <p className="rounded-xl border border-emerald-200/60 bg-emerald-50/60 px-4 py-3 text-[13px] leading-snug text-emerald-700">
           {success}
         </p>
+      )}
+
+      {mode === 'login' && (
+        <div className="flex items-center justify-between">
+          <label className="flex items-center gap-2 text-sm text-gray-600">
+            <input
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(event) => setRememberMe(event.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            <span>记住账号</span>
+          </label>
+        </div>
       )}
 
       <button

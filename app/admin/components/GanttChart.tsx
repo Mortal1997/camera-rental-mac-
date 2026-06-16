@@ -67,7 +67,9 @@ const HOLIDAYS_2026 = [
   '2026-10-07',
 ];
 
-const STICKY_COLUMN_WIDTH = 220;
+const MIN_STICKY_COLUMN_WIDTH = 120;
+const MAX_STICKY_COLUMN_WIDTH = 320;
+const DEFAULT_STICKY_COLUMN_WIDTH = 180;
 const DAY_COLUMN_WIDTH = 70;
 const PAST_DAYS = 30;
 const FUTURE_DAYS = 60;
@@ -107,13 +109,23 @@ function getStatusPill(status: string) {
 }
 
 function getEquipmentStatusBadge(status: EquipmentWithOrders['status']) {
-  if (status === 'available') return { icon: CheckCircle2 };
-  if (status === 'rented') return { icon: Package2 };
-  return { icon: Wrench };
+  if (status === 'available') return { label: '闲置', icon: CheckCircle2, tone: 'bg-green-500 text-white' };
+  if (status === 'rented') return { label: '租用中', icon: Package2, tone: 'bg-orange-500 text-white' };
+  return { label: '待发货', icon: Wrench, tone: 'bg-blue-500 text-white' };
 }
 
-function getEquipmentStatusDotTone() {
-  return 'bg-indigo-600 text-white';
+function getOrderStatusKey(status: Order['status']) {
+  if (status === 'confirmed' || status === 'pending_payment') return 'pending';
+  if (status === 'using') return 'renting';
+  if (status === 'returned' || status === 'cancelled') return 'idle';
+  return 'pending';
+}
+
+function getEffectiveEquipmentStatus(item: EquipmentWithOrders) {
+  const statuses = item.orders.map((order) => getOrderStatusKey(order.status));
+  if (statuses.some((value) => value === 'renting')) return 'rented';
+  if (statuses.some((value) => value === 'pending')) return 'pending';
+  return item.status;
 }
 
 function formatDayLabel(date: Date) {
@@ -194,6 +206,15 @@ function buildOrderSummary(selectedOrder: SelectedOrderState) {
   ].join('\n');
 }
 
+function buildCustomerInfo(selectedOrder: SelectedOrderState) {
+  const lines = [
+    selectedOrder.order.customer_name,
+    selectedOrder.order.customer_phone,
+    selectedOrder.order.shipping_address,
+  ];
+  return lines.filter(Boolean).join('\n');
+}
+
 function InfoCard({ icon: Icon, label, value }: { icon: typeof CalendarRange; label: string; value: string }) {
   return (
     <InfoTile className="p-4">
@@ -226,6 +247,8 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
   const [confirmShip, setConfirmShip] = useState(false);
   const [isPending, startTransition] = useTransition();
   const dragStateRef = useRef({ isDown: false, startX: 0, scrollLeft: 0 });
+  const [resizableWidth, setResizableWidth] = useState(DEFAULT_STICKY_COLUMN_WIDTH);
+  const effectiveResizableWidth = Math.max(MIN_STICKY_COLUMN_WIDTH, Math.min(MAX_STICKY_COLUMN_WIDTH, resizableWidth));
 
   const days = useMemo(() => Array.from({ length: PAST_DAYS + FUTURE_DAYS }, (_, index) => {
     const date = new Date(today);
@@ -262,7 +285,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
 
   useEffect(() => {
     if (!scrollRef.current) return;
-    scrollRef.current.scrollLeft = PAST_DAYS * DAY_COLUMN_WIDTH - STICKY_COLUMN_WIDTH * 0.2;
+    scrollRef.current.scrollLeft = PAST_DAYS * DAY_COLUMN_WIDTH - effectiveResizableWidth * 0.2;
   }, []);
 
   const stopDragging = () => {
@@ -290,6 +313,26 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
   const scrollByDays = (direction: number) => {
     if (!scrollRef.current) return;
     scrollRef.current.scrollBy({ left: direction * SCROLL_STEP_DAYS * DAY_COLUMN_WIDTH, behavior: 'smooth' });
+  };
+
+  const startResizing = (event: React.MouseEvent<HTMLTableCellElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    dragStateRef.current.isDown = false;
+    setIsDragging(false);
+    document.addEventListener('mousemove', handleResize);
+    document.addEventListener('mouseup', stopResizing, { once: true });
+  };
+
+  const handleResize = (event: MouseEvent) => {
+    if (!scrollRef.current) return;
+    const tableRect = scrollRef.current.getBoundingClientRect();
+    const nextWidth = Math.max(MIN_STICKY_COLUMN_WIDTH, Math.min(MAX_STICKY_COLUMN_WIDTH, event.clientX - tableRect.left));
+    setResizableWidth(nextWidth);
+  };
+
+  const stopResizing = () => {
+    document.removeEventListener('mousemove', handleResize);
   };
 
   const resetFilters = () => {
@@ -504,10 +547,11 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
                 <tr>
                   <th
                     rowSpan={2}
-                    className="sticky left-0 z-40 border-b border-r border-slate-200 bg-slate-50 px-4 py-3 text-center font-semibold text-slate-500 shadow-[6px_0_16px_-6px_rgba(0,0,0,0.10)]"
-                    style={{ width: STICKY_COLUMN_WIDTH, minWidth: STICKY_COLUMN_WIDTH }}
+                    className="sticky left-0 z-40 relative border-b border-r border-slate-200 bg-slate-50 px-4 py-3 text-center font-semibold text-slate-500 shadow-[6px_0_16px_-6px_rgba(0,0,0,0.10)]"
+                    style={{ width: effectiveResizableWidth, minWidth: MIN_STICKY_COLUMN_WIDTH, maxWidth: MAX_STICKY_COLUMN_WIDTH }}
                   >
                     <span className="flex items-center justify-center">设备</span>
+                    <div className="absolute inset-y-0 right-0 w-2 cursor-col-resize" onMouseDown={startResizing} />
                   </th>
                   {monthGroups.map((group) => {
                     const containsToday = days.slice(group.startIndex, group.startIndex + group.span).some((date) => isSameDay(date, today));
@@ -550,20 +594,36 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
               </thead>
               <tbody>
                 {filteredEquipment.map((item, rowIndex) => {
-                  const equipmentStatus = getEquipmentStatusBadge(item.status);
-                  const equipmentStatusDotTone = getEquipmentStatusDotTone();
+                  const effectiveStatus = getEffectiveEquipmentStatus(item);
+                  const equipmentStatus = getEquipmentStatusBadge(effectiveStatus);
                   const EquipmentStatusIcon = equipmentStatus.icon;
+
+                  if (rowIndex < 5) {
+                    // eslint-disable-next-line no-console
+                    console.debug('[gantt-equipment-status]', {
+                      index: rowIndex,
+                      id: item.id,
+                      name: item.name,
+                      baseStatus: item.status,
+                      orders: item.orders.map((order) => ({ id: order.id, status: order.status })),
+                      effectiveStatus,
+                      tone: equipmentStatus.tone,
+                    });
+                  }
 
                   return (
                     <tr key={item.id}>
                       <td
-                        className="sticky left-0 z-30 border-b border-r border-slate-100 bg-slate-50 pl-4 pr-2 py-2.5 font-medium text-slate-900 shadow-[6px_0_16px_-6px_rgba(0,0,0,0.10)]"
-                        style={{ width: STICKY_COLUMN_WIDTH, minWidth: STICKY_COLUMN_WIDTH }}
+                        className="sticky left-0 z-30 border-b border-r border-slate-100 bg-slate-50 pl-3 pr-2 py-2.5 shadow-[6px_0_16px_-6px_rgba(0,0,0,0.10)]"
+                        style={{ width: effectiveResizableWidth, minWidth: MIN_STICKY_COLUMN_WIDTH, maxWidth: MAX_STICKY_COLUMN_WIDTH }}
                       >
-                        <div className="flex items-center gap-2">
-                          <span className="min-w-0 text-[12px] font-semibold leading-5 text-slate-900">{item.name}</span>
-                          <span className={cn('inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full shadow-sm', equipmentStatusDotTone)}>
-                            <EquipmentStatusIcon className="h-2.5 w-2.5" />
+                        <div className="flex min-w-0 items-center gap-2">
+                          <div className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-medium text-gray-900">{item.name}</span>
+                            <span className="block truncate text-[11px] text-gray-400">{item.serial_number || '—'}</span>
+                          </div>
+                          <span className={cn('inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full shadow-sm', equipmentStatus.tone)}>
+                            <EquipmentStatusIcon className="h-3.5 w-3.5" />
                           </span>
                         </div>
                       </td>
@@ -681,12 +741,10 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end sm:gap-3">
               {!isEditing ? (
                 <>
-                  <Button variant="outline" size="sm" onClick={openEditMode} className="gap-1.5 rounded-full border-indigo-200 text-indigo-700 hover:bg-indigo-50 hover:border-indigo-300">
-                    <Edit2 className="h-3.5 w-3.5" />编辑订单
-                  </Button>
-                  {selectedOrder ? <SecondaryButton onClick={() => handleCopy(selectedOrder.order.customer_phone || '', '已复制联系电话')} disabled={!selectedOrder.order.customer_phone}><Clipboard className="h-4 w-4" />复制电话</SecondaryButton> : null}
-                  {selectedOrder ? <SecondaryButton onClick={() => handleCopy(selectedOrder.order.shipping_address || '', '已复制收货地址')} disabled={!selectedOrder.order.shipping_address}><MapPin className="h-4 w-4" />复制地址</SecondaryButton> : null}
-                  {selectedOrder ? <SecondaryButton onClick={() => handleCopy(buildOrderSummary(selectedOrder), '已复制订单摘要')}><Clipboard className="h-4 w-4" />复制摘要</SecondaryButton> : null}
+                  <SecondaryButton onClick={openEditMode}>
+                    <Edit2 className="h-4 w-4" />编辑订单
+                  </SecondaryButton>
+                  {selectedOrder ? <SecondaryButton onClick={() => handleCopy(buildCustomerInfo(selectedOrder), '已复制客户信息')} disabled={!selectedOrder.order.customer_name && !selectedOrder.order.customer_phone && !selectedOrder.order.shipping_address}><Clipboard className="h-4 w-4" />复制客户信息</SecondaryButton> : null}
                   {nextStatusAction ? nextStatusAction.tone === 'primary' ? (
                     <PrimaryButton onClick={handleStatusAction} disabled={isPending || (nextStatusAction.requireTracking && !confirmShip)}>
                       {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <nextStatusAction.icon className="h-4 w-4" />}
@@ -713,7 +771,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
         }
       >
         {selectedOrder ? (
-          <div className="space-y-6">
+          <div className="space-y-5">
             <div className="flex flex-wrap items-center gap-3">
               {currentStatus ? <StatBadge tone={currentStatus.tone}>{currentStatus.label}</StatBadge> : null}
               <StatBadge tone="slate">订单号：{selectedOrder.order.id}</StatBadge>
@@ -825,27 +883,48 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
               </div>
             ) : (
               <>
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                  <InfoCard icon={Package2} label="设备" value={selectedOrder.equipmentName} />
-                  <InfoCard icon={CalendarRange} label="租赁时间" value={`${selectedOrder.order.start_date} ~ ${selectedOrder.order.end_date}`} />
-                  <InfoCard icon={UserRound} label="客户姓名" value={selectedOrder.order.customer_name || '—'} />
-                  <InfoCard icon={Phone} label="联系电话" value={selectedOrder.order.customer_phone || '—'} />
-                  <InfoCard icon={MapPin} label="收货地址" value={selectedOrder.order.shipping_address || '—'} />
-                  <InfoCard icon={CalendarRange} label="订单金额" value={`¥${Number(selectedOrder.order.total_price || 0).toFixed(2)}`} />
-                </div>
+                <InfoTile className="p-4">
+                  <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">订单信息</p>
+                  <div className="mt-3 grid gap-3 text-sm text-slate-700 sm:grid-cols-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-slate-400">设备</span>
+                      <span className="text-right font-medium">{selectedOrder.equipmentName}</span>
+                    </div>
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-slate-400">租赁时间</span>
+                      <span className="text-right font-medium">{selectedOrder.order.start_date} ~ {selectedOrder.order.end_date}</span>
+                    </div>
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-slate-400">客户姓名</span>
+                      <span className="text-right font-medium">{selectedOrder.order.customer_name || '—'}</span>
+                    </div>
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-slate-400">联系电话</span>
+                      <span className="text-right font-medium">{selectedOrder.order.customer_phone || '—'}</span>
+                    </div>
+                    <div className="flex items-start justify-between gap-3 sm:col-span-2">
+                      <span className="text-slate-400">收货地址</span>
+                      <span className="text-right font-medium">{selectedOrder.order.shipping_address || '—'}</span>
+                    </div>
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-slate-400">订单金额</span>
+                      <span className="text-right font-medium">¥{Number(selectedOrder.order.total_price || 0).toFixed(2)}</span>
+                    </div>
+                  </div>
+                </InfoTile>
 
                 <div className="grid gap-4 md:grid-cols-2">
-                  <InfoTile className="p-5">
+                  <InfoTile className="p-4">
                     <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">物流信息</p>
-                    <div className="mt-4 space-y-3 text-sm text-slate-700">
+                    <div className="mt-3 space-y-3 text-sm text-slate-700">
                       <div className="flex items-center justify-between gap-3"><span className="text-slate-400">运单号</span><span className="font-medium">{selectedOrder.order.tracking_number || '暂未录入'}</span></div>
                       <div className="flex items-center justify-between gap-3"><span className="text-slate-400">免押方式</span><span className="font-medium">{selectedOrder.order.deposit_exemption || '—'}</span></div>
                     </div>
                   </InfoTile>
 
-                  <InfoTile className="p-5">
+                  <InfoTile className="p-4">
                     <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">费用信息</p>
-                    <div className="mt-4 space-y-3 text-sm text-slate-700">
+                    <div className="mt-3 space-y-3 text-sm text-slate-700">
                       <div className="flex items-center justify-between gap-3"><span className="text-slate-400">订单金额</span><span className="font-medium">¥{Number(selectedOrder.order.total_price || 0).toFixed(2)}</span></div>
                       <div className="flex items-center justify-between gap-3"><span className="text-slate-400">已付押金</span><span className="font-medium">¥{Number(selectedOrder.order.deposit_paid || 0).toFixed(2)}</span></div>
                     </div>
