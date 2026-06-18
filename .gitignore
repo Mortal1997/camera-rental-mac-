@@ -33,6 +33,9 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# local-only scripts and one-off files (mock push, ad-hoc sql, etc.)
+/tmp/
+
 # vercel
 .vercel
 

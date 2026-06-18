@@ -45,7 +45,7 @@ export async function getFinancialReport(
     .eq('status', 'returned')
     .order('end_date', { ascending: false });
 
-  query = query.gte('start_date', rangeStart).lte('start_date', rangeEnd);
+  query = query.gte('start_date', rangeStart).lte('end_date', rangeEnd);
 
   const { data, error } = await query;
 
@@ -73,12 +73,14 @@ export async function getFinancialReport(
 
   const monthlySummary = Array.from(monthlyMap.values()).sort((a, b) => b.month.localeCompare(a.month));
 
+  const returnedOrders = orders.filter((order) => order.status === 'returned');
+
   return {
     startDate: rangeStart,
     endDate: rangeEnd,
     totalRevenue,
-    totalOrders: orders.length,
+    totalOrders: returnedOrders.length,
     monthlySummary,
-    orders,
+    orders: returnedOrders,
   };
 }

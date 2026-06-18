@@ -11,6 +11,11 @@ export default async function DispatchPage({
 }) {
   const supabase = await createClient();
 
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) {
+    throw new Error('未登录或会话已过期，请重新登录');
+  }
+
   const { data: ordersData, error: ordersError } = await supabase
     .from('orders')
     .select('*')
@@ -43,5 +48,5 @@ export default async function DispatchPage({
   const equipmentList = (equipmentData ?? []) as Equipment[];
   const dispatchConsoleKey = orders.map((order) => `${order.id}:${order.status}:${order.equipment_id ?? 'unassigned'}`).join('|');
 
-  return <DispatchConsole key={dispatchConsoleKey} orders={orders} equipmentList={equipmentList} highlightedExternalOrderIds={highlightedExternalOrderIds} />;
+  return <DispatchConsole key={dispatchConsoleKey} orders={orders} equipmentList={equipmentList} highlightedExternalOrderIds={highlightedExternalOrderIds} userId={user.id} />;
 }

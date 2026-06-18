@@ -17,6 +17,7 @@ import {
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { deleteOrder, processExternalOrder } from '../../actions/admin-actions';
 import type { Equipment, Order } from '../../actions/types';
+import RefreshRemoteOrders from './RefreshRemoteOrders';
 import SyncOrdersButton from './SyncOrdersButton';
 import {
   Drawer,
@@ -40,6 +41,8 @@ interface DispatchConsoleProps {
   orders: Order[];
   equipmentList: Equipment[];
   highlightedExternalOrderIds?: string[];
+  userId?: string;
+  rawRealtimeStatus?: string | null;
 }
 
 const depositOptions = ['芝麻信用', '押金双免', '支付押金', '熟人免押'];
@@ -296,7 +299,7 @@ function DispatchOrderCard({
   );
 }
 
-export default function DispatchConsole({ orders, equipmentList, highlightedExternalOrderIds = [] }: DispatchConsoleProps) {
+export default function DispatchConsole({ orders, equipmentList, highlightedExternalOrderIds = [], userId, rawRealtimeStatus }: DispatchConsoleProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -347,9 +350,44 @@ export default function DispatchConsole({ orders, equipmentList, highlightedExte
   }, [orders, searchTerm, platformFilter]);
 
   const [mounted, setMounted] = useState(false);
+  const [refreshStatus, setRefreshStatus] = useState<'idle' | 'connecting' | 'live' | 'error'>('idle');
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  const handleRefreshed = React.useCallback(() => {
+    setLastRefreshedAt(new Date());
+  }, []);
+
+  const formatRefreshTime = (value: Date | null) => {
+    if (!value) return '尚未刷新';
+    return value.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  };
+
+  const refreshStatusLabel = React.useMemo(() => {
+    const base =
+      refreshStatus === 'connecting'
+        ? '自动同步连接中...'
+        : refreshStatus === 'live'
+          ? '自动同步已就绪'
+          : refreshStatus === 'error'
+            ? '自动同步连接断开，将按30秒间隔重试'
+            : '自动同步待启动';
+
+    const raw = rawRealtimeStatus?.trim();
+    if (refreshStatus !== 'live' && raw && raw !== 'SUBSCRIBED') {
+      return `${base}（${raw}）`;
+    }
+    return base;
+  }, [refreshStatus, rawRealtimeStatus]);
+
+  const refreshStatusClassName = React.useMemo(() => {
+    if (refreshStatus === 'connecting') return 'text-amber-600';
+    if (refreshStatus === 'live') return 'text-emerald-600';
+    if (refreshStatus === 'error') return 'text-rose-500';
+    return 'text-slate-500';
+  }, [refreshStatus]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -446,6 +484,11 @@ export default function DispatchConsole({ orders, equipmentList, highlightedExte
 
   return (
     <>
+      <RefreshRemoteOrders
+        userId={userId ?? ''}
+        onStatusChange={setRefreshStatus}
+        onRefreshed={handleRefreshed}
+      />
       <SurfaceCard className="bg-slate-50 shadow-none">
         <SectionHeader
           title="待调度订单"
@@ -453,6 +496,8 @@ export default function DispatchConsole({ orders, equipmentList, highlightedExte
           meta={(
             <div className="flex flex-col items-start gap-3 sm:items-end">
               <span className="text-sm text-slate-500">{filteredOrders.length} / {orders.length} 单</span>
+              <span className={`text-xs ${refreshStatusClassName}`}>{refreshStatusLabel}</span>
+              <span className="text-xs text-slate-400">上次刷新：{formatRefreshTime(lastRefreshedAt)}</span>
               <SyncOrdersButton />
             </div>
           )}
@@ -520,7 +565,7 @@ export default function DispatchConsole({ orders, equipmentList, highlightedExte
         eyebrow="Dispatch Drawer"
         icon={SendHorizonal}
         title={selectedOrder ? `调度：${selectedOrder.customer_name || '未命名客户'}` : '编辑并接单'}
-        footer={
+        footer={(
           <div className="flex flex-col gap-3">
             {formError ? (
               <div className="rounded-2xl border border-rose-200/80 bg-rose-50/80 px-4 py-3 text-sm text-rose-600">{formError}</div>
@@ -536,7 +581,7 @@ export default function DispatchConsole({ orders, equipmentList, highlightedExte
               </PrimaryButton>
             </div>
           </div>
-        }
+        )}
       >
         {selectedOrder ? (
           <DispatchDrawerContent
