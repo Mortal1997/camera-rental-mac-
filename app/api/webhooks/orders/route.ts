@@ -45,6 +45,24 @@ type GoofishOrderPayload = {
   [key: string]: unknown;
 };
 
+// 文档 required 字段：order_no, order_status, refund_status, modify_time,
+// seller_id, user_name, order_type, product_id, item_id
+// order_no 单独提出来做更友好的错误信息，其他 8 个统一走 missingFields
+const REQUIRED_FIELDS = [
+  'order_status',
+  'refund_status',
+  'modify_time',
+  'seller_id',
+  'user_name',
+  'order_type',
+  'product_id',
+  'item_id',
+] as const;
+
+function getMissingRequiredFields(payload: Record<string, unknown>): string[] {
+  return REQUIRED_FIELDS.filter((field) => payload[field] === undefined || payload[field] === null);
+}
+
 // 与 orders 表 status 字段对齐
 type OrderStatus =
   | 'unprocessed'
@@ -83,14 +101,24 @@ const ORDER_STATUS_MAP: Record<number, OrderStatus> = {
 };
 
 // ---------------------------------------------------------------------
-// 签名校验：MD5(appid + timestamp + appsecret) — 上线前需核对官方算法
+// 签名校验：MD5("appKey,bodyMd5,timestamp,appSecret")
+// 2026-06-18 用官方文档示例数验证一致。
+// 注意：需要原始 body 字符串（不是 parse 后的对象）才能算 bodyMd5，
+// 所以在 POST 里要先把 body 读成 text。
 // ---------------------------------------------------------------------
 function md5(input: string): string {
   return createHash('md5').update(input, 'utf8').digest('hex');
 }
 
-function computeSignature(appid: string, timestamp: string, appSecret: string): string {
-  return md5(`${appid}${timestamp}${appSecret}`);
+function computeSignature(
+  appid: string,
+  rawBodyString: string,
+  timestamp: string,
+  appSecret: string,
+): string {
+  // bodyMd5：先对 body 字符串本身做 MD5；空 body 时传 "{}" 或 "" 都行（官方两种都支持）
+  const bodyMd5 = md5(rawBodyString);
+  return md5(`${appid},${bodyMd5},${timestamp},${appSecret}`);
 }
 
 function safeTimingEqual(a: string, b: string): boolean {
@@ -216,6 +244,15 @@ export async function POST(request: NextRequest) {
   const ok = (msg = '接收成功'): NextResponse =>
     NextResponse.json({ result: 'success', msg }, { status: 200 });
 
+  // ----------------------------------------------------------------
+  // ⚠️ 闲管家文档："接口请求超时时间为3秒（建议接收到推送通知后，
+  // 异步处理业务逻辑）"——本路由策略：
+  //   同步阶段：参数解析 + 签名校验（必须做，错了不能入队）
+  //   异步阶段：DB 写入 + revalidatePath（用 setImmediate 立刻抛到
+  //             事件循环下一 tick，HTTP 响应不等它）
+  // 失败语义：上游重试 3 次也是浪费；内部错误应依赖监控告警而非重试风暴
+  // ----------------------------------------------------------------
+
   try {
     log('Webhook 请求开始');
 
@@ -235,12 +272,14 @@ export async function POST(request: NextRequest) {
       return fail('timestamp 无效或已过期');
     }
 
-    // -------- 3. 解析 body（必须顶层就是订单对象） --------
+    // -------- 3. 读原始 body（先 text，再 json） --------
+    // 签名校验需要原始字符串（要算 bodyMd5），所以这里不能直接 .json()
+    const rawBody = await request.text();
     let payload: GoofishOrderPayload;
     try {
-      payload = (await request.json()) as GoofishOrderPayload;
+      payload = JSON.parse(rawBody) as GoofishOrderPayload;
     } catch {
-      log('解析 JSON 失败');
+      log('解析 JSON 失败', { rawBodyPrefix: rawBody.slice(0, 80) });
       return fail('无效的 JSON 数据', 400);
     }
 
@@ -253,7 +292,14 @@ export async function POST(request: NextRequest) {
       return fail('缺少 order_no');
     }
 
-    // -------- 4. 查租户（顺带拿 app_secret 做签名校验） --------
+    // -------- 4. 必填字段校验（文档 required 9 个） --------
+    const missing = getMissingRequiredFields(payload as Record<string, unknown>);
+    if (missing.length > 0) {
+      log('缺少必填字段', { orderNo: payload.order_no, missing });
+      return fail(`缺少必填字段：${missing.join(', ')}`);
+    }
+
+    // -------- 5. 查租户（顺带拿 app_secret 做签名校验） --------
     // 用 service_role（不走用户 RLS）查 user_settings，
     // 所以 service_role key 绝不能走 NEXT_PUBLIC_*，否则会进客户端 bundle。
     const supabaseAdmin = createAdminClient(
@@ -282,8 +328,8 @@ export async function POST(request: NextRequest) {
       return fail('租户未配置 app_secret');
     }
 
-    // -------- 5. 签名校验 --------
-    const expected = computeSignature(appid, timestamp, settings.goofish_app_secret);
+    // -------- 6. 签名校验（用原始 body 字符串算 bodyMd5） --------
+    const expected = computeSignature(appid, rawBody, timestamp, settings.goofish_app_secret);
     if (!safeTimingEqual(expected.toLowerCase(), sign.toLowerCase())) {
       log('签名校验失败', { appid, timestamp });
       return fail('签名校验失败');
@@ -291,18 +337,47 @@ export async function POST(request: NextRequest) {
 
     log('签名校验通过', { userId: settings.user_id, orderNo: payload.order_no });
 
-    // -------- 6. 映射 + 幂等 upsert --------
-    const row = buildOrderRow(payload, settings.user_id);
+    // -------- 7. 立即返 success（不等业务） --------
+    // 把"业务处理"扔到 setImmediate 异步执行。失败仅记日志，不重试。
+    setImmediate(() => {
+      void processOrderAsync(supabaseAdmin, payload, settings.user_id, requestId);
+    });
+
+    return ok();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '内部处理失败';
+    console.error(`[webhook/orders][${requestId}] unhandled error:`, message);
+    return fail(message);
+  }
+}
+
+// =====================================================================
+// 异步业务处理（setImmediate 里跑，不阻塞 HTTP 响应）
+// 失败仅记日志——闲管家最多重试 3 次，但我们的写入是幂等的，重试也安全
+// =====================================================================
+async function processOrderAsync(
+  supabaseAdmin: AdminClient,
+  payload: GoofishOrderPayload,
+  userId: string,
+  requestId: string,
+): Promise<void> {
+  const log = (msg: string, data?: unknown) => {
+    console.log(`[webhook/orders][${requestId}][async] ${msg}`, data ?? '');
+  };
+
+  try {
+    // 1) 映射 + 幂等 upsert
+    const row = buildOrderRow(payload, userId);
     const result = await upsertOrderAtomic(supabaseAdmin, row);
 
     if (result.error) {
       log('DB 写入失败', { error: result.error, orderNo: payload.order_no });
-      return fail(result.error);
+      return;
     }
 
     log('订单处理完成', { orderNo: payload.order_no, action: result.action });
 
-    // -------- 7. 失效缓存（非阻塞尽力而为） --------
+    // 2) 失效缓存（非阻塞尽力而为）
     try {
       revalidatePath('/admin/orders/dispatch');
       revalidatePath('/admin/orders');
@@ -310,13 +385,8 @@ export async function POST(request: NextRequest) {
     } catch (e) {
       log('revalidatePath 失败（忽略）', e);
     }
-
-    return ok();
   } catch (error) {
-    const message = error instanceof Error ? error.message : '内部处理失败';
-    console.error(`[webhook/orders][${requestId}] unhandled error:`, message);
-    // 仍返回 success：上游重试 3 次也是浪费；内部错误应依赖监控告警而非重试风暴
-    // 但为安全起见按文档惯例仍返 fail
-    return fail(message);
+    const message = error instanceof Error ? error.message : '异步处理失败';
+    log('异步处理 unhandled error', message);
   }
 }

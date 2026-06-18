@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
+import { EXPRESS_CARRIERS } from '@/lib/goofish/express-codes';
 
 interface PendingOrdersProps {
   orders: Order[];
@@ -254,6 +255,8 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
   const [trackingInputs, setTrackingInputs] = useState<Record<string, string>>({});
   // 每个订单的发货方式（默认快递）。跑腿/自提不强制要求运单号。
   const [shipMethodInputs, setShipMethodInputs] = useState<Record<string, 'express' | 'hainter' | 'pickup'>>({});
+  // 每个订单的快递公司 code（仅 express 方式生效）。默认顺丰。
+  const [expressCarrierInputs, setExpressCarrierInputs] = useState<Record<string, string>>({});
   const [isPending, startTransition] = useTransition();
   const [sfLoadingStates, setSfLoadingStates] = useState<Record<string, boolean>>({});
   const [sfToast, setSfToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -338,6 +341,9 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
       setFormError('快递方式必须填写运单号');
       return;
     }
+    // 快递必须选快递公司（默认顺丰，可改）
+    const expressCode = expressCarrierInputs[orderId] ?? 'shunfeng';
+    const expressCarrier = EXPRESS_CARRIERS.find((c) => c.code === expressCode) ?? EXPRESS_CARRIERS[0];
     startTransition(async () => {
       const result = await updateOrderStatus(
         orderId,
@@ -345,18 +351,25 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
         trackingNumber || undefined,
         method,
         undefined,
-        { pushToGoofish: true }
+        {
+          // 跑腿/自提不发起回传（pushDelivery 内部也会短路，但显式传 false 更明确）
+          pushToGoofish: method === 'express',
+          expressCode: method === 'express' ? expressCarrier.code : undefined,
+          expressName: method === 'express' ? expressCarrier.name : undefined,
+        }
       );
       if (!result.success) {
         setFormError(result.error ?? '发货失败，请稍后重试');
         return;
       }
 
-      // 闲管家回传失败的提示（非阻塞）
+      // 闲管家回传状态：成功/跳过/失败都提示用户
       if (result.goofishPush === 'failed') {
         showToast('error', '本地已发货，闲管家回传失败，请稍后重试');
       } else if (result.goofishPush === 'ok') {
-        showToast('success', '发货成功，闲管家已回传');
+        showToast('success', `发货成功，闲管家已回传（${expressCarrier.name}）`);
+      } else if (result.goofishPush === 'no_carrier') {
+        showToast('success', '本地已发货（跑腿/自提，闲管家无需回传）');
       } else if (result.goofishPush === 'skipped') {
         showToast('success', '本地已发货（闲管家凭证缺失未回传）');
       }
@@ -368,6 +381,11 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
         return next;
       });
       setShipMethodInputs((prev) => {
+        const next = { ...prev };
+        delete next[orderId];
+        return next;
+      });
+      setExpressCarrierInputs((prev) => {
         const next = { ...prev };
         delete next[orderId];
         return next;
@@ -752,13 +770,27 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
                       })}
                     </div>
                     {(shipMethodInputs[order.id] ?? 'express') === 'express' && (
-                      <TextInput
-                        type="text"
-                        placeholder="运单号"
-                        value={trackingInputs[order.id] ?? ''}
-                        onChange={(e) => setTrackingInputs((prev) => ({ ...prev, [order.id]: e.target.value }))}
-                        className="w-full !py-2 text-xs"
-                      />
+                      <div className="space-y-1.5">
+                        <SelectInput
+                          value={expressCarrierInputs[order.id] ?? 'shunfeng'}
+                          onChange={(e) => setExpressCarrierInputs((prev) => ({ ...prev, [order.id]: e.target.value }))}
+                          className="w-full !py-2 text-xs"
+                          aria-label="快递公司"
+                        >
+                          {EXPRESS_CARRIERS.map((carrier) => (
+                            <option key={carrier.code} value={carrier.code}>
+                              {carrier.name}
+                            </option>
+                          ))}
+                        </SelectInput>
+                        <TextInput
+                          type="text"
+                          placeholder="运单号"
+                          value={trackingInputs[order.id] ?? ''}
+                          onChange={(e) => setTrackingInputs((prev) => ({ ...prev, [order.id]: e.target.value }))}
+                          className="w-full !py-2 text-xs"
+                        />
+                      </div>
                     )}
                     <div className="flex items-center gap-2">
                       <PrimaryButton

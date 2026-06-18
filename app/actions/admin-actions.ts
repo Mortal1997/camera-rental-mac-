@@ -437,8 +437,13 @@ export async function updateOrderStatus(
   trackingNumber?: string,
   shippingMethod?: 'express' | 'hainter' | 'pickup',
   equipmentId?: string,
-  options?: { pushToGoofish?: boolean }
-): Promise<{ success: boolean; error?: string; goofishPush?: 'ok' | 'skipped' | 'failed' | 'no_source' }> {
+  options?: {
+    pushToGoofish?: boolean;
+    // 快递公司（仅 shippingMethod === 'express' 时必填）
+    expressCode?: string;
+    expressName?: string;
+  }
+): Promise<{ success: boolean; error?: string; goofishPush?: 'ok' | 'skipped' | 'failed' | 'no_source' | 'no_carrier' }> {
   await requireAuth();
   const supabase = await createClient();
 
@@ -533,9 +538,14 @@ export async function updateOrderStatus(
         externalOrderId: orderRow.external_order_id,
         trackingNumber,
         shippingMethod: (shippingMethod ?? 'express') as ShippingMethod,
+        expressCode: options?.expressCode,
+        expressName: options?.expressName,
       });
 
       if (pushResult.ok) {
+        if (pushResult.skipped === 'no_carrier') {
+          return { success: true, goofishPush: 'no_carrier' };
+        }
         return { success: true, goofishPush: 'ok' };
       }
 

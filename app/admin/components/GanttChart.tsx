@@ -29,6 +29,7 @@ import type { Equipment, EquipmentWithOrders, Order, Order as OrderType } from '
 import { EmptyState, FilterPanel, InfoTile, Modal, PrimaryButton, SecondaryButton, SelectInput, SectionHeader, StatBadge, SurfaceCard, TextInput, cn } from './ui';
 import { Button } from '@/components/ui/button';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
+import { EXPRESS_CARRIERS } from '@/lib/goofish/express-codes';
 
 interface GanttChartProps {
   equipment: EquipmentWithOrders[];
@@ -248,6 +249,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
   const [trackingNumberInput, setTrackingNumberInput] = useState('');
   const [confirmShip, setConfirmShip] = useState(false);
   const [shipMethod, setShipMethod] = useState<'express' | 'hainter' | 'pickup'>('express');
+  const [expressCarrier, setExpressCarrier] = useState<string>('shunfeng');
   const [isPending, startTransition] = useTransition();
   const dragStateRef = useRef({ isDown: false, startX: 0, scrollLeft: 0 });
   const [resizableWidth, setResizableWidth] = useState(DEFAULT_STICKY_COLUMN_WIDTH);
@@ -362,6 +364,9 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
       return;
     }
 
+    // 解析快递公司中文名（默认顺丰）
+    const carrier = EXPRESS_CARRIERS.find((c) => c.code === expressCarrier) ?? EXPRESS_CARRIERS[0];
+
     startTransition(async () => {
       const result = await updateOrderStatus(
         selectedOrder.order.id,
@@ -370,7 +375,11 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
         shipMethod,
         undefined,
         // 发货（'using'）时回传闲管家；归还（'returned'）不回传
-        { pushToGoofish: nextStatusAction.nextStatus === 'using' }
+        {
+          pushToGoofish: nextStatusAction.nextStatus === 'using' && shipMethod === 'express',
+          expressCode: shipMethod === 'express' ? carrier.code : undefined,
+          expressName: shipMethod === 'express' ? carrier.name : undefined,
+        }
       );
 
       if (!result.success) {
@@ -382,9 +391,11 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
       let message = '';
       if (nextStatusAction.nextStatus === 'using') {
         if (result.goofishPush === 'ok') {
-          message = '已完成发货，设备状态已同步为出租中，闲管家已回传';
+          message = `已完成发货，设备状态已同步为出租中，闲管家已回传（${carrier.name}）`;
         } else if (result.goofishPush === 'failed') {
           message = '本地已发货，闲管家回传失败，请稍后重试';
+        } else if (result.goofishPush === 'no_carrier') {
+          message = `已完成发货（${shipMethod === 'hainter' ? '跑腿' : '自提'}，闲管家无需回传）`;
         } else if (result.goofishPush === 'skipped') {
           message = '已完成发货，闲管家凭证缺失未回传';
         } else {
@@ -852,6 +863,17 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
 
                 {shipMethod === 'express' && (
                   <div className="space-y-2">
+                    <SelectInput
+                      value={expressCarrier}
+                      onChange={(e) => { setExpressCarrier(e.target.value); if (confirmShip) setConfirmShip(false); }}
+                      aria-label="快递公司"
+                    >
+                      {EXPRESS_CARRIERS.map((c) => (
+                        <option key={c.code} value={c.code}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </SelectInput>
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
                       <div className="flex-1">
                         <TextInput
