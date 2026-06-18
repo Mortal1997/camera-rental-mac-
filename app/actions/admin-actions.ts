@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
+import { pushDelivery, type ShippingMethod } from '@/lib/goofish/delivery';
 import type { Equipment, Order } from './types';
 
 const supabaseAdmin = createAdminClient(
@@ -435,8 +436,9 @@ export async function updateOrderStatus(
   newStatus: string,
   trackingNumber?: string,
   shippingMethod?: 'express' | 'hainter' | 'pickup',
-  equipmentId?: string
-): Promise<{ success: boolean; error?: string }> {
+  equipmentId?: string,
+  options?: { pushToGoofish?: boolean }
+): Promise<{ success: boolean; error?: string; goofishPush?: 'ok' | 'skipped' | 'failed' | 'no_source' }> {
   await requireAuth();
   const supabase = await createClient();
 
@@ -476,6 +478,78 @@ export async function updateOrderStatus(
 
   revalidatePath('/admin');
   revalidatePath('/admin/inventory');
+
+  // -------- 发货回传闲管家（非阻塞尽力而为） --------
+  // 触发条件：调用方显式要求 pushToGoofish=true；
+  //           newStatus='using'（发货动作）；
+  //           订单平台来源是闲鱼。
+  // 失败语义：本地状态已落库，发货回传失败不阻断业务。返回 goofishPush='failed'
+  //           让前端可选地展示警告。
+  if (options?.pushToGoofish && newStatus === 'using') {
+    try {
+      // 1) 查订单：拿 external_order_id + platform_source + user_id
+      const { data: orderRow, error: orderError } = await supabase
+        .from('orders')
+        .select('external_order_id, platform_source, user_id')
+        .eq('id', orderId)
+        .maybeSingle();
+
+      if (orderError) {
+        console.warn('[ship] 查询订单平台来源失败，跳过闲管家回传', orderError);
+        return { success: true, goofishPush: 'failed' };
+      }
+
+      if (!orderRow?.external_order_id) {
+        // 本地手建订单（非闲鱼），不触发回传
+        return { success: true, goofishPush: 'no_source' };
+      }
+
+      if (orderRow.platform_source !== '闲鱼') {
+        return { success: true, goofishPush: 'no_source' };
+      }
+
+      // 2) 查该用户闲管家凭证
+      const { data: settings, error: settingsError } = await supabase
+        .from('user_settings')
+        .select('goofish_app_key, goofish_app_secret')
+        .eq('user_id', orderRow.user_id)
+        .maybeSingle();
+
+      if (settingsError || !settings?.goofish_app_key || !settings?.goofish_app_secret) {
+        console.warn('[ship] 闲管家凭证缺失，跳过回传', {
+          orderId,
+          hasError: !!settingsError,
+          hasKey: !!settings?.goofish_app_key,
+          hasSecret: !!settings?.goofish_app_secret,
+        });
+        return { success: true, goofishPush: 'skipped' };
+      }
+
+      // 3) 调回传（用 service_role 仅是后续可能要做签名/审计日志预留）
+      //    当前 pushDelivery 内部只做签名 + fetch，不读库，所以普通 client 即可
+      const pushResult = await pushDelivery({
+        appKey: settings.goofish_app_key,
+        appSecret: settings.goofish_app_secret,
+        externalOrderId: orderRow.external_order_id,
+        trackingNumber,
+        shippingMethod: (shippingMethod ?? 'express') as ShippingMethod,
+      });
+
+      if (pushResult.ok) {
+        return { success: true, goofishPush: 'ok' };
+      }
+
+      console.warn('[ship] 闲管家回传失败（不阻断发货）', {
+        orderId,
+        reason: pushResult.reason,
+      });
+      return { success: true, goofishPush: 'failed' };
+    } catch (e) {
+      console.error('[ship] 闲管家回传异常（不阻断发货）', e);
+      return { success: true, goofishPush: 'failed' };
+    }
+  }
+
   return { success: true };
 }
 

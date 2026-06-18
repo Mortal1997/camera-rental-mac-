@@ -367,7 +367,10 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
         selectedOrder.order.id,
         nextStatusAction.nextStatus,
         nextStatusAction.requireTracking ? trackingNumberInput.trim() : undefined,
-        shipMethod
+        shipMethod,
+        undefined,
+        // 发货（'using'）时回传闲管家；归还（'returned'）不回传
+        { pushToGoofish: nextStatusAction.nextStatus === 'using' }
       );
 
       if (!result.success) {
@@ -375,7 +378,22 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
         return;
       }
 
-      setCopyMessage(nextStatusAction.nextStatus === 'using' ? '已完成发货，设备状态已同步为出租中' : '已完成归还，设备状态已同步为空闲');
+      // 闲管家回传状态：成功/跳过/失败都提示用户
+      let message = '';
+      if (nextStatusAction.nextStatus === 'using') {
+        if (result.goofishPush === 'ok') {
+          message = '已完成发货，设备状态已同步为出租中，闲管家已回传';
+        } else if (result.goofishPush === 'failed') {
+          message = '本地已发货，闲管家回传失败，请稍后重试';
+        } else if (result.goofishPush === 'skipped') {
+          message = '已完成发货，闲管家凭证缺失未回传';
+        } else {
+          message = '已完成发货，设备状态已同步为出租中';
+        }
+      } else {
+        message = '已完成归还，设备状态已同步为空闲';
+      }
+      setCopyMessage(message);
       setSelectedOrder((current) => current ? {
         ...current,
         order: {

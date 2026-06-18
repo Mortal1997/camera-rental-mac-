@@ -252,6 +252,8 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
   );
   const [displayOrders, setDisplayOrders] = useState(filtered);
   const [trackingInputs, setTrackingInputs] = useState<Record<string, string>>({});
+  // 每个订单的发货方式（默认快递）。跑腿/自提不强制要求运单号。
+  const [shipMethodInputs, setShipMethodInputs] = useState<Record<string, 'express' | 'hainter' | 'pickup'>>({});
   const [isPending, startTransition] = useTransition();
   const [sfLoadingStates, setSfLoadingStates] = useState<Record<string, boolean>>({});
   const [sfToast, setSfToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -330,15 +332,42 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
 
   const handleShip = (orderId: string) => {
     const trackingNumber = trackingInputs[orderId]?.trim();
+    const method = shipMethodInputs[orderId] ?? 'express';
+    // 快递必须填单号；跑腿/自提不强制
+    if (method === 'express' && !trackingNumber) {
+      setFormError('快递方式必须填写运单号');
+      return;
+    }
     startTransition(async () => {
-      const result = await updateOrderStatus(orderId, 'using', trackingNumber || undefined, 'express');
+      const result = await updateOrderStatus(
+        orderId,
+        'using',
+        trackingNumber || undefined,
+        method,
+        undefined,
+        { pushToGoofish: true }
+      );
       if (!result.success) {
         setFormError(result.error ?? '发货失败，请稍后重试');
         return;
       }
 
+      // 闲管家回传失败的提示（非阻塞）
+      if (result.goofishPush === 'failed') {
+        showToast('error', '本地已发货，闲管家回传失败，请稍后重试');
+      } else if (result.goofishPush === 'ok') {
+        showToast('success', '发货成功，闲管家已回传');
+      } else if (result.goofishPush === 'skipped') {
+        showToast('success', '本地已发货（闲管家凭证缺失未回传）');
+      }
+
       setDisplayOrders((current) => current.filter((order) => order.id !== orderId));
       setTrackingInputs((prev) => {
+        const next = { ...prev };
+        delete next[orderId];
+        return next;
+      });
+      setShipMethodInputs((prev) => {
         const next = { ...prev };
         delete next[orderId];
         return next;
@@ -698,13 +727,39 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
                         )}
                       </button>
                     </div>
-                    <TextInput
-                      type="text"
-                      placeholder="运单号"
-                      value={trackingInputs[order.id] ?? ''}
-                      onChange={(e) => setTrackingInputs((prev) => ({ ...prev, [order.id]: e.target.value }))}
-                      className="w-full !py-2 text-xs"
-                    />
+                    <div className="flex items-center gap-1.5 text-xs">
+                      <span className="text-slate-500">方式</span>
+                      {([
+                        { value: 'express', label: '快递' },
+                        { value: 'hainter', label: '跑腿' },
+                        { value: 'pickup', label: '自提' },
+                      ] as const).map((opt) => {
+                        const active = (shipMethodInputs[order.id] ?? 'express') === opt.value;
+                        return (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => setShipMethodInputs((prev) => ({ ...prev, [order.id]: opt.value }))}
+                            className={`rounded px-2 py-1 text-xs transition ${
+                              active
+                                ? 'bg-indigo-600 text-white'
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {(shipMethodInputs[order.id] ?? 'express') === 'express' && (
+                      <TextInput
+                        type="text"
+                        placeholder="运单号"
+                        value={trackingInputs[order.id] ?? ''}
+                        onChange={(e) => setTrackingInputs((prev) => ({ ...prev, [order.id]: e.target.value }))}
+                        className="w-full !py-2 text-xs"
+                      />
+                    )}
                     <div className="flex items-center gap-2">
                       <PrimaryButton
                         onClick={() => handleShip(order.id)}
