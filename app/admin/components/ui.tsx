@@ -152,8 +152,8 @@ export function DangerButton({ className, children, ...props }: React.ButtonHTML
 }
 
 export function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  const { className, ...rest } = props;
-  return <input {...rest} className={cn('w-full rounded-2xl border border-input bg-background px-3 py-2 md:px-4 md:py-3 text-xs md:text-[14px] text-foreground shadow-sm transition-all outline-none placeholder:text-muted-foreground focus:border-foreground/30 focus:ring-2 focus:ring-foreground/10', className)} />;
+  const { className, suppressHydrationWarning, ...rest } = props;
+  return <input suppressHydrationWarning={suppressHydrationWarning} {...rest} className={cn('w-full rounded-2xl border border-input bg-background px-3 py-2 md:px-4 md:py-3 text-xs md:text-[14px] text-foreground shadow-sm transition-all outline-none placeholder:text-muted-foreground focus:border-foreground/30 focus:ring-2 focus:ring-foreground/10', className)} />;
 }
 
 export function SelectInput(props: React.SelectHTMLAttributes<HTMLSelectElement>) {

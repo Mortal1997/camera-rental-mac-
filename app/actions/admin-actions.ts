@@ -591,3 +591,23 @@ export async function updateOrderFields(
   revalidatePath('/admin/orders');
   return { success: true };
 }
+
+export async function getCurrentUserGoofishCredentials(): Promise<{
+  appKey: string | null;
+  appSecret: string | null;
+}> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { appKey: null, appSecret: null };
+
+  const { data } = await supabase
+    .from('user_settings')
+    .select('goofish_app_key, goofish_app_secret')
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  return {
+    appKey: data?.goofish_app_key ?? null,
+    appSecret: data?.goofish_app_secret ?? null,
+  };
+}

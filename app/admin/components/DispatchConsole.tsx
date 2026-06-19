@@ -1,7 +1,6 @@
 'use client';
 
 import { format } from 'date-fns';
-import { zhCN } from 'date-fns/locale';
 import * as React from 'react';
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { type DateRange } from 'react-day-picker';
@@ -13,6 +12,8 @@ import {
   Smartphone,
   Trash2,
   Truck,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { deleteOrder, processExternalOrder } from '../../actions/admin-actions';
@@ -40,6 +41,7 @@ import { DateRangePicker } from '@/components/ui/date-range-picker';
 interface DispatchConsoleProps {
   orders: Order[];
   equipmentList: Equipment[];
+  activeOrders: Pick<Order, 'id' | 'start_date' | 'end_date' | 'status' | 'equipment_id'>[];
   highlightedExternalOrderIds?: string[];
   userId?: string;
   rawRealtimeStatus?: string | null;
@@ -63,6 +65,9 @@ interface DispatchDrawerContentProps {
   dateRange: DateRange | undefined;
   onDateRangeChange: (range: DateRange | undefined) => void;
   availableEquipment: Equipment[];
+  conflictEquipmentInfo: Array<{ id: string; label: string; conflictRanges: string }>;
+  showAllEquipment: boolean;
+  onToggleShowAll: () => void;
   updateFormValue: <K extends keyof DraftFormState>(key: K, value: DraftFormState[K]) => void;
   equipmentLabelMap: Map<string, string>;
 }
@@ -116,6 +121,9 @@ function DispatchDrawerContent({
   dateRange,
   onDateRangeChange,
   availableEquipment,
+  conflictEquipmentInfo,
+  showAllEquipment,
+  onToggleShowAll,
   updateFormValue,
   equipmentLabelMap,
 }: DispatchDrawerContentProps) {
@@ -127,6 +135,10 @@ function DispatchDrawerContent({
     if (dateRange.from) return `${format(dateRange.from, 'yyyy-MM-dd')} 起`;
     return '待确认租期';
   }, [dateRange]);
+
+  const conflictCount = conflictEquipmentInfo.length;
+  const selectedConflict = conflictEquipmentInfo.find(e => e.id === formValues.equipment_id);
+  const selectedConflictRanges = selectedConflict?.conflictRanges;
 
   return (
     <div className="space-y-5">
@@ -147,18 +159,42 @@ function DispatchDrawerContent({
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <FormField label="分配具体设备" className="md:col-span-2">
-          <SelectInput
-            value={formValues.equipment_id}
-            onChange={(e) => updateFormValue('equipment_id', e.target.value)}
-          >
-            {availableEquipment.map((equipment) => (
-              <option key={equipment.id} value={equipment.id}>
-                {equipment.name}
-                {equipment.serial_number ? ` · ${equipment.serial_number}` : ''}
-              </option>
-            ))}
-          </SelectInput>
-          {order.expected_equipment_model ? (
+          <div className="flex items-center gap-2">
+            <SelectInput
+              value={formValues.equipment_id}
+              onChange={(e) => updateFormValue('equipment_id', e.target.value)}
+              className="flex-1"
+            >
+              {availableEquipment.map((equipment) => {
+                const conflict = conflictEquipmentInfo.find(c => c.id === equipment.id);
+                return (
+                  <option key={equipment.id} value={equipment.id}>
+                    {equipment.name}
+                    {equipment.serial_number ? ` · ${equipment.serial_number}` : ''}
+                    {conflict ? ` ⚠️ 冲突(${conflict.conflictRanges})` : ''}
+                  </option>
+                );
+              })}
+            </SelectInput>
+            <button
+              type="button"
+              onClick={onToggleShowAll}
+              className="inline-flex items-center gap-1.5 shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-800 active:scale-95"
+              title={showAllEquipment ? '隐藏冲突设备' : '显示全部设备（包括冲突）'}
+            >
+              {showAllEquipment ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+              {showAllEquipment ? '隐藏冲突' : '显示全部'}
+            </button>
+          </div>
+          {conflictCount > 0 && !showAllEquipment ? (
+            <p className="mt-1.5 text-xs text-amber-600">
+              {conflictCount} 台设备在此时间段有租约重叠，默认已过滤。点击右侧按钮可查看全部设备。
+            </p>
+          ) : selectedConflictRanges ? (
+            <p className="mt-1.5 text-xs text-amber-600">
+              ⚠️ 当前选中设备与 {selectedConflictRanges} 的订单存在租期重叠，请确认后再接单。
+            </p>
+          ) : order.expected_equipment_model ? (
             <p className="mt-1.5 text-xs text-muted-foreground">
               平台期望：{order.expected_equipment_model}，请从上方选择实际分配的设备
             </p>
@@ -299,7 +335,7 @@ function DispatchOrderCard({
   );
 }
 
-export default function DispatchConsole({ orders, equipmentList, highlightedExternalOrderIds = [], userId, rawRealtimeStatus }: DispatchConsoleProps) {
+export default function DispatchConsole({ orders, equipmentList, activeOrders, highlightedExternalOrderIds = [], userId, rawRealtimeStatus }: DispatchConsoleProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -312,8 +348,57 @@ export default function DispatchConsole({ orders, equipmentList, highlightedExte
   const [platformFilter, setPlatformFilter] = useState('all');
   const [activeHighlights, setActiveHighlights] = useState<string[]>(() => highlightedExternalOrderIds);
   const [deleteDialogOrderId, setDeleteDialogOrderId] = useState<string | null>(null);
+  const [showAllEquipment, setShowAllEquipment] = useState(false);
 
-  const availableEquipment = useMemo(() => equipmentList, [equipmentList]);
+  // 检测设备在某日期段是否与已有订单冲突，返回冲突订单的日期范围描述
+  function getConflictInfo(eqId: string, from: Date, to: Date): string {
+    const conflictRanges: string[] = [];
+    for (const o of activeOrders) {
+      if (o.equipment_id !== eqId) continue;
+      if (!o.start_date || !o.end_date) continue;
+      const oStart = new Date(o.start_date);
+      const oEnd = new Date(o.end_date);
+      if (from <= oEnd && to >= oStart) {
+        conflictRanges.push(`${o.start_date}~${o.end_date}`);
+      }
+    }
+    return conflictRanges.join(', ') || '';
+  }
+
+  const { conflictEquipmentInfo, filteredEquipment } = useMemo(() => {
+    const conflicts: Array<{ id: string; label: string; conflictRanges: string }> = [];
+    const filtered: Equipment[] = [];
+
+    for (const eq of equipmentList) {
+      const label = eq.serial_number ? `${eq.name} · ${eq.serial_number}` : eq.name;
+
+      if (!dateRange?.from || !dateRange?.to) {
+        filtered.push(eq);
+        continue;
+      }
+
+      const from = dateRange.from;
+      const to = dateRange.to;
+      const conflictRanges = getConflictInfo(eq.id, from, to);
+
+      if (conflictRanges) {
+        conflicts.push({ id: eq.id, label, conflictRanges });
+        filtered.push(eq);
+      } else {
+        filtered.push(eq);
+      }
+    }
+
+    return { conflictEquipmentInfo: conflicts, filteredEquipment: filtered };
+  }, [equipmentList, dateRange, activeOrders]);
+
+  // 实际显示的设备列表：根据 showAllEquipment 决定是否过滤掉冲突设备
+  const availableEquipment = useMemo(() => {
+    if (showAllEquipment || !dateRange?.from || !dateRange?.to) {
+      return filteredEquipment;
+    }
+    return filteredEquipment.filter(eq => !conflictEquipmentInfo.some(c => c.id === eq.id));
+  }, [filteredEquipment, showAllEquipment, dateRange, conflictEquipmentInfo]);
 
   const equipmentLabelMap = useMemo(
     () =>
@@ -407,6 +492,7 @@ export default function DispatchConsole({ orders, equipmentList, highlightedExte
   const openDrawer = (order: Order) => {
     setSelectedOrder(order);
     setFormError(null);
+    setShowAllEquipment(false);
     setFormValues(buildInitialFormState(equipmentList, order));
     setDateRange(
       order.start_date && order.end_date
@@ -420,6 +506,7 @@ export default function DispatchConsole({ orders, equipmentList, highlightedExte
   const closeDrawer = () => {
     setSelectedOrder(null);
     setFormError(null);
+    setShowAllEquipment(false);
     setFormValues(buildInitialFormState(equipmentList));
     setDateRange(undefined);
   };
@@ -590,6 +677,9 @@ export default function DispatchConsole({ orders, equipmentList, highlightedExte
             dateRange={dateRange}
             onDateRangeChange={setDateRange}
             availableEquipment={availableEquipment}
+            conflictEquipmentInfo={conflictEquipmentInfo}
+            showAllEquipment={showAllEquipment}
+            onToggleShowAll={() => setShowAllEquipment(v => !v)}
             updateFormValue={updateFormValue}
             equipmentLabelMap={equipmentLabelMap}
           />

@@ -191,7 +191,7 @@ async function upsertOrderAtomic(
   // 1) 先查现有行 + 现有 modify_time（按 user_id + 平台 + 订单号定位）
   const { data: existing, error: selectError } = await supabaseAdmin
     .from('orders')
-    .select('id, metadata')
+    .select('id, metadata, customer_name, customer_phone, shipping_address, total_price, expected_equipment_model')
     .eq('user_id', row.user_id)
     .eq('platform_source', row.platform_source)
     .eq('external_order_id', row.external_order_id)
@@ -200,7 +200,7 @@ async function upsertOrderAtomic(
   if (selectError) return { action: 'skipped', error: selectError.message };
 
   if (!existing) {
-    // 全新订单：插入
+    // 全新订单：插入（用 webhook 占位数据）
     const { error: insertError } = await supabaseAdmin
       .from('orders')
       .insert(row as never);
@@ -208,7 +208,15 @@ async function upsertOrderAtomic(
     return { action: 'inserted' };
   }
 
-  const existingRow = existing as { id: string; metadata: { modify_time?: number } | null };
+  const existingRow = existing as {
+    id: string;
+    metadata: { modify_time?: number } | null;
+    customer_name: string;
+    customer_phone: string;
+    shipping_address: string;
+    total_price: number;
+    expected_equipment_model: string;
+  };
   const existingModifyTime =
     typeof existingRow.metadata?.modify_time === 'number'
       ? existingRow.metadata.modify_time
@@ -219,10 +227,22 @@ async function upsertOrderAtomic(
     return { action: 'skipped' };
   }
 
-  // 新事件或同 modify_time：覆盖（id 不变，触发 RLS 校验 user_id）
+  // 新事件或同 modify_time：保留已有的真实客户数据，只更新状态和元数据
+  // 防止 webhook 的不完整数据（姓名=user_name，电话/地址/金额=占位符）覆盖 sync-orders 拉取的真实数据
+  const hasCompleteData = (val: string) => val && val !== '未知买家' && val !== '待补充电话' && val !== '待补充地址' && val !== '未知设备';
+
+  const mergedRow: OrderRow = {
+    ...row,
+    customer_name: hasCompleteData(existingRow.customer_name) ? existingRow.customer_name : row.customer_name,
+    customer_phone: hasCompleteData(existingRow.customer_phone) ? existingRow.customer_phone : row.customer_phone,
+    shipping_address: hasCompleteData(existingRow.shipping_address) ? existingRow.shipping_address : row.shipping_address,
+    total_price: existingRow.total_price > 0 ? existingRow.total_price : row.total_price,
+    expected_equipment_model: hasCompleteData(existingRow.expected_equipment_model) ? existingRow.expected_equipment_model : row.expected_equipment_model,
+  };
+
   const { error: updateError } = await supabaseAdmin
     .from('orders')
-    .update(row as never)
+    .update(mergedRow as never)
     .eq('id', existingRow.id);
 
   if (updateError) return { action: 'skipped', error: updateError.message };
