@@ -2,7 +2,7 @@
 
 import { format } from 'date-fns';
 import * as React from 'react';
-import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
 import { type DateRange } from 'react-day-picker';
 import {
   CalendarRange,
@@ -350,8 +350,7 @@ export default function DispatchConsole({ orders, equipmentList, activeOrders, h
   const [deleteDialogOrderId, setDeleteDialogOrderId] = useState<string | null>(null);
   const [showAllEquipment, setShowAllEquipment] = useState(false);
 
-  // 检测设备在某日期段是否与已有订单冲突，返回冲突订单的日期范围描述
-  function getConflictInfo(eqId: string, from: Date, to: Date): string {
+  const getConflictInfo = useCallback((eqId: string, from: Date, to: Date): string => {
     const conflictRanges: string[] = [];
     for (const o of activeOrders) {
       if (o.equipment_id !== eqId) continue;
@@ -363,7 +362,7 @@ export default function DispatchConsole({ orders, equipmentList, activeOrders, h
       }
     }
     return conflictRanges.join(', ') || '';
-  }
+  }, [activeOrders]);
 
   const { conflictEquipmentInfo, filteredEquipment } = useMemo(() => {
     const conflicts: Array<{ id: string; label: string; conflictRanges: string }> = [];
@@ -390,7 +389,7 @@ export default function DispatchConsole({ orders, equipmentList, activeOrders, h
     }
 
     return { conflictEquipmentInfo: conflicts, filteredEquipment: filtered };
-  }, [equipmentList, dateRange, activeOrders]);
+  }, [equipmentList, dateRange, getConflictInfo]);
 
   // 实际显示的设备列表：根据 showAllEquipment 决定是否过滤掉冲突设备
   const availableEquipment = useMemo(() => {
@@ -437,9 +436,11 @@ export default function DispatchConsole({ orders, equipmentList, activeOrders, h
   const [mounted, setMounted] = useState(false);
   const [refreshStatus, setRefreshStatus] = useState<'idle' | 'connecting' | 'live' | 'error'>('idle');
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+
+  // Use rAF to set mounted after first paint — avoids hydration mismatch without useEffect
+  if (!mounted) {
+    requestAnimationFrame(() => setMounted(true));
+  }
 
   const handleRefreshed = React.useCallback(() => {
     setLastRefreshedAt(new Date());

@@ -1,5 +1,5 @@
 import './globals.css';
-import { IBM_Plex_Sans, Inter } from "next/font/google";
+import { Inter } from "next/font/google";
 import { cn } from "@/lib/utils";
 import { TooltipProvider } from "@/components/ui/tooltip";
 

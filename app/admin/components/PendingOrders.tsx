@@ -1,7 +1,6 @@
 'use client';
 
 import { format } from 'date-fns';
-import { zhCN } from 'date-fns/locale';
 import { useMemo, useRef, useState, useTransition } from 'react';
 import { type DateRange } from 'react-day-picker';
 import { bulkCreateOrders, createManualOrder, deleteOrder, updateOrderFields, updateOrderStatus } from '../../actions/admin-actions';
@@ -70,7 +69,7 @@ function smartParse(raw: string): SmartParseResult | null {
   const phone = phoneMatch ? phoneMatch[1] : '';
 
   // 从原串中彻底剔除手机号（含前后可能有的符号和空格）
-  let textWithoutPhone = cleaned
+  const textWithoutPhone = cleaned
     .replace(phone, ' ')
     .replace(/\s{2,}/g, ' ')
     .trim();

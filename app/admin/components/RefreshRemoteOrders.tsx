@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 
@@ -14,8 +14,6 @@ interface RefreshRemoteOrdersProps {
 
 // 主轮询：每 5 秒查一次"上次游标之后有没有新订单"。有就 router.refresh()。
 const POLL_INTERVAL_MS = 5_000;
-// 单次查询超时：超过这个时间视为错误、把状态切到 error。
-const POLL_TIMEOUT_MS = 8_000;
 // 兜底轮询：即使游标没变化也强制刷新一次，覆盖 webhook 写入但 updated_at
 // 没前进、或 RLS 命中但 revalidate 没触发的边缘情况。
 const FALLBACK_REFRESH_MS = 30_000;
@@ -28,7 +26,10 @@ type DispatchPollRow = {
 
 export default function RefreshRemoteOrders({ userId, onStatusChange, onRefreshed }: RefreshRemoteOrdersProps) {
   const router = useRouter();
-  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('idle');
+  const connectionStatusRef = useRef<ConnectionStatus>('idle');
+  const setConnectionStatus = (next: ConnectionStatus) => {
+    connectionStatusRef.current = next;
+  };
 
   const onStatusChangeRef = useRef(onStatusChange);
   const onRefreshedRef = useRef(onRefreshed);
@@ -88,7 +89,6 @@ export default function RefreshRemoteOrders({ userId, onStatusChange, onRefreshe
           setStatus('live');
         } else if (data && data.length > 0) {
           // 游标之后有新订单 -> 拉一次 RSC
-          console.log('[Poll] dispatch changed, refreshing. latest:', data[0]);
           router.refresh();
           onRefreshedRef.current?.();
         }
@@ -118,7 +118,6 @@ export default function RefreshRemoteOrders({ userId, onStatusChange, onRefreshe
     // 覆盖"订单 created_at 跟其它新单同值"等边缘情况。
     const fallbackInterval = window.setInterval(() => {
       if (cancelled) return;
-      console.log('[Fallback] dispatch refresh tick');
       router.refresh();
       onRefreshedRef.current?.();
     }, FALLBACK_REFRESH_MS);

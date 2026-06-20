@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from 'react';
 import { Camera, Loader2 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { signInWithPassword, signUp, type AuthResult } from './actions';
 
@@ -65,8 +65,10 @@ function AuthForm({
     if (typeof window === 'undefined') return;
     const remembered = window.localStorage.getItem(REMEMBERED_EMAIL_KEY);
     if (remembered) {
-      setEmail(remembered);
-      setRememberMe(true);
+      startTransition(() => {
+        setEmail(remembered);
+        setRememberMe(true);
+      });
     }
   }, []);
 

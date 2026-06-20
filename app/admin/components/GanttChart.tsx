@@ -2,7 +2,6 @@
 
 import {
   AlertTriangle,
-  CalendarRange,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -10,9 +9,7 @@ import {
   Clock,
   Edit2,
   Loader2,
-  MapPin,
   Package2,
-  Phone,
   RotateCcw,
   Send,
   Truck,
@@ -21,7 +18,6 @@ import {
   Wrench,
 } from 'lucide-react';
 import { format } from 'date-fns';
-import { zhCN } from 'date-fns/locale';
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { type DateRange } from 'react-day-picker';
 import { updateOrderFields, updateOrderStatus } from '../../actions/admin-actions';
@@ -191,18 +187,6 @@ function getNextStatusAction(order: Order) {
   return null;
 }
 
-function buildOrderSummary(selectedOrder: SelectedOrderState) {
-  return [
-    `客户：${selectedOrder.order.customer_name || '—'}`,
-    `电话：${selectedOrder.order.customer_phone || '—'}`,
-    `设备：${selectedOrder.equipmentName}`,
-    `时间：${selectedOrder.order.start_date} ~ ${selectedOrder.order.end_date}`,
-    `地址：${selectedOrder.order.shipping_address || '—'}`,
-    `订单号：${selectedOrder.order.id}`,
-    `运单号：${selectedOrder.order.tracking_number || '—'}`,
-  ].join('\n');
-}
-
 function buildCustomerInfo(selectedOrder: SelectedOrderState) {
   const lines = [
     selectedOrder.order.customer_name,
@@ -210,18 +194,6 @@ function buildCustomerInfo(selectedOrder: SelectedOrderState) {
     selectedOrder.order.shipping_address,
   ];
   return lines.filter(Boolean).join('\n');
-}
-
-function InfoCard({ icon: Icon, label, value }: { icon: typeof CalendarRange; label: string; value: string }) {
-  return (
-    <InfoTile className="p-4">
-      <div className="flex items-center gap-2 text-slate-500">
-        <Icon className="h-4 w-4 text-indigo-600" />
-        <span className="text-[11px] font-medium uppercase tracking-[0.14em]">{label}</span>
-      </div>
-      <p className="mt-3 text-sm font-medium text-slate-900">{value}</p>
-    </InfoTile>
-  );
 }
 
 export default function GanttChart({ equipment, equipmentList }: GanttChartProps) {
@@ -302,6 +274,11 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
   const scrollByDays = (direction: number) => {
     if (!scrollRef.current) return;
     scrollRef.current.scrollBy({ left: direction * SCROLL_STEP_DAYS * DAY_COLUMN_WIDTH, behavior: 'smooth' });
+  };
+
+  const scrollToDayIndex = (dayIndex: number) => {
+    if (!scrollRef.current) return;
+    scrollRef.current.scrollTo({ left: dayIndex * DAY_COLUMN_WIDTH, behavior: 'smooth' });
   };
 
   useEffect(() => {
@@ -628,7 +605,6 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
                   const EquipmentStatusIcon = equipmentStatus.icon;
 
                   if (rowIndex < 5) {
-                    // eslint-disable-next-line no-console
                     console.debug('[gantt-equipment-status]', {
                       index: rowIndex,
                       id: item.id,
