@@ -338,12 +338,12 @@ export default function InventoryManager({ equipment }: InventoryManagerProps) {
                 <TableHead>
                   <tr>
                     <Th>设备名称</Th>
-                    <Th>型号 / 分类</Th>
-                    <Th>SN号</Th>
+                    <Th className="hidden sm:table-cell">型号 / 分类</Th>
+                    <Th className="hidden sm:table-cell">SN号</Th>
                     <Th>日租金</Th>
-                    <Th>押金</Th>
+                    <Th className="hidden lg:table-cell">押金</Th>
                     <Th>状态</Th>
-                    <Th>质保到期</Th>
+                    <Th className="hidden lg:table-cell">质保到期</Th>
                     <Th>操作</Th>
                   </tr>
                 </TableHead>
@@ -353,14 +353,14 @@ export default function InventoryManager({ equipment }: InventoryManagerProps) {
                     return (
                       <Tr key={eq.id}>
                         <Td className="font-medium text-slate-900">{eq.name}</Td>
-                        <Td>{eq.category || '—'}</Td>
-                        <Td className="font-mono text-xs text-slate-500">{eq.serial_number || '—'}</Td>
+                        <Td className="hidden sm:table-cell">{eq.category || '—'}</Td>
+                        <Td className="hidden sm:table-cell font-mono text-xs text-slate-500">{eq.serial_number || '—'}</Td>
                         <Td className="font-semibold text-slate-900">¥{Number(eq.daily_fee).toFixed(2)}</Td>
-                        <Td className="font-semibold text-slate-900">¥{Number(eq.deposit).toFixed(2)}</Td>
+                        <Td className="hidden lg:table-cell font-semibold text-slate-900">¥{Number(eq.deposit).toFixed(2)}</Td>
                         <Td>
                           <StatBadge tone={cfg.tone} dot>{cfg.label}</StatBadge>
                         </Td>
-                        <Td>{eq.warranty_expire_date || '—'}</Td>
+                        <Td className="hidden lg:table-cell">{eq.warranty_expire_date || '—'}</Td>
                         <Td>
                           <div className="flex items-center gap-2">
                             <SecondaryButton onClick={() => handleToggleStatus(eq)} disabled={isPending} className="text-xs !py-1.5">

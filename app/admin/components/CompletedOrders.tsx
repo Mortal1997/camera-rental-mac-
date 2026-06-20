@@ -68,10 +68,10 @@ export default function CompletedOrders({ orders }: CompletedOrdersProps) {
             <TableHead>
               <tr>
                 <Th>设备</Th>
-                <Th>平台 / 外部单号</Th>
-                <Th>客户信息</Th>
-                <Th>收货地址 / 物流</Th>
-                <Th>租用时段</Th>
+                <Th className="hidden md:table-cell">平台 / 外部单号</Th>
+                <Th className="hidden sm:table-cell">客户信息</Th>
+                <Th className="hidden lg:table-cell">收货地址 / 物流</Th>
+                <Th className="hidden md:table-cell">租用时段</Th>
                 <Th>订单金额</Th>
                 <Th>操作</Th>
               </tr>
@@ -87,7 +87,7 @@ export default function CompletedOrders({ orders }: CompletedOrdersProps) {
                         )}
                       </div>
                     </Td>
-                  <Td>
+                  <Td className="hidden md:table-cell">
                     <div className="space-y-1">
                       <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
                         {order.platform_source || '手动录单'}
@@ -95,13 +95,13 @@ export default function CompletedOrders({ orders }: CompletedOrdersProps) {
                       <p className="text-xs text-slate-400">{order.external_order_id || `内部单号：${order.id}`}</p>
                     </div>
                   </Td>
-                  <Td>
+                  <Td className="hidden sm:table-cell">
                     <div className="space-y-1">
                       <p className="text-sm font-medium text-slate-900">{order.customer_name ?? '—'}</p>
                       <p className="text-sm text-slate-500">{order.customer_phone ?? '—'}</p>
                     </div>
                   </Td>
-                  <Td>
+                  <Td className="hidden lg:table-cell">
                     <div className="space-y-1">
                       <p className="max-w-[140px] truncate text-sm text-slate-700 sm:max-w-[200px]" title={order.shipping_address || '—'}>
                         {order.shipping_address || '—'}
@@ -109,7 +109,7 @@ export default function CompletedOrders({ orders }: CompletedOrdersProps) {
                       <p className="text-xs text-slate-400">{order.shipping_method || '待确认发货方式'}</p>
                     </div>
                   </Td>
-                  <Td className="text-slate-600">{formatDateRange(order.start_date, order.end_date)}</Td>
+                  <Td className="hidden md:table-cell text-slate-600">{formatDateRange(order.start_date, order.end_date)}</Td>
                   <Td className="font-semibold text-emerald-600">{formatCurrency(order.total_price)}</Td>
                   <Td>
                     <button

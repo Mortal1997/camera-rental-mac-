@@ -30,6 +30,7 @@ import { EmptyState, FilterPanel, InfoTile, Modal, PrimaryButton, SecondaryButto
 import { Button } from '@/components/ui/button';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { EXPRESS_CARRIERS } from '@/lib/goofish/express-codes';
+import { getEffectiveEquipmentStatus, type EffectiveEquipmentStatus } from '@/lib/equipment-status';
 
 interface GanttChartProps {
   equipment: EquipmentWithOrders[];
@@ -81,9 +82,9 @@ function getStatusPill(status: string) {
   if (status === 'pending_payment' || status === 'confirmed') {
     return {
       label: '待发货',
-      bar: 'bg-indigo-100 text-indigo-700',
+      bar: 'bg-sky-100 text-sky-700',
       tone: 'blue' as const,
-      accent: 'bg-indigo-50 text-indigo-700',
+      accent: 'bg-sky-50 text-sky-700',
     };
   }
   if (status === 'using') {
@@ -110,25 +111,13 @@ function getStatusPill(status: string) {
   };
 }
 
-function getEquipmentStatusBadge(status: EquipmentWithOrders['status']) {
-  if (status === 'available') return { label: '闲置', icon: CheckCircle2, tone: 'bg-green-500 text-white' };
-  if (status === 'rented') return { label: '租用中', icon: Package2, tone: 'bg-orange-500 text-white' };
-  if (status === 'pending') return { label: '待发货', icon: Clock, tone: 'bg-blue-500 text-white' };
-  return { label: '维护中', icon: Wrench, tone: 'bg-slate-500 text-white' };
-}
-
-function getOrderStatusKey(status: Order['status']) {
-  if (status === 'confirmed' || status === 'pending_payment') return 'pending';
-  if (status === 'using') return 'renting';
-  if (status === 'returned' || status === 'cancelled') return 'idle';
-  return 'pending';
-}
-
-function getEffectiveEquipmentStatus(item: EquipmentWithOrders) {
-  const statuses = item.orders.map((order) => getOrderStatusKey(order.status));
-  if (statuses.some((value) => value === 'renting')) return 'rented';
-  if (statuses.some((value) => value === 'pending')) return 'pending';
-  return item.status;
+function getEquipmentStatusBadge(status: EffectiveEquipmentStatus) {
+  if (status === 'available') return { label: '闲置', icon: CheckCircle2, tone: 'bg-emerald-500 text-white' };
+  if (status === 'rented') return { label: '租用中', icon: Package2, tone: 'bg-amber-500 text-white' };
+  if (status === 'pending') return { label: '待发货', icon: Clock, tone: 'bg-sky-500 text-white' };
+  if (status === 'overdue') return { label: '逾期未还', icon: AlertTriangle, tone: 'bg-rose-600 text-white animate-pulse' };
+  if (status === 'maintenance') return { label: '维修中', icon: Wrench, tone: 'bg-rose-500 text-white' };
+  return { label: '未知', icon: Wrench, tone: 'bg-slate-500 text-white' };
 }
 
 function formatDayLabel(date: Date) {
@@ -176,9 +165,14 @@ function getColumnTone({ holiday, weekend, todayColumn }: { holiday: boolean; we
   return '';
 }
 
-function matchesStatusFilter(orders: Order[], filter: string) {
+function matchesMachineStatusFilter(
+  item: EquipmentWithOrders,
+  filter: EffectiveEquipmentStatus | 'all',
+  today: Date,
+): boolean {
   if (filter === 'all') return true;
-  return orders.some((order) => order.status === filter);
+  if (item.status === 'maintenance') return false;
+  return getEffectiveEquipmentStatus(item, today) === filter;
 }
 
 function getTooltipPlacement(index: number, span: number, totalDays: number, rowIndex: number, totalRows: number) {
@@ -242,7 +236,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
   const [sfLoading, setSfLoading] = useState(false);
   const [sfError, setSfError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [machineStatusFilter, setMachineStatusFilter] = useState<EffectiveEquipmentStatus | 'all'>('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [actionError, setActionError] = useState<string | null>(null);
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
@@ -279,19 +273,14 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
     return equipment.filter((item) => {
       const matchesSearch = !term || item.name.toLowerCase().includes(term) || (item.serial_number ?? '').toLowerCase().includes(term) || item.orders.some((order) => (order.customer_name ?? '').toLowerCase().includes(term));
       const matchesCategory = categoryFilter === 'all' || item.category === categoryFilter;
-      const matchesStatus = matchesStatusFilter(item.orders, statusFilter);
+      const matchesStatus = matchesMachineStatusFilter(item, machineStatusFilter, today);
       return matchesSearch && matchesCategory && matchesStatus;
     });
-  }, [equipment, searchTerm, categoryFilter, statusFilter]);
+  }, [equipment, searchTerm, categoryFilter, machineStatusFilter, today]);
 
   const totalOrders = useMemo(() => filteredEquipment.reduce((sum, item) => sum + item.orders.length, 0), [filteredEquipment]);
   const currentStatus = selectedOrder ? getStatusPill(selectedOrder.order.status) : null;
   const nextStatusAction = selectedOrder ? getNextStatusAction(selectedOrder.order) : null;
-
-  useEffect(() => {
-    if (!scrollRef.current) return;
-    scrollRef.current.scrollLeft = PAST_DAYS * DAY_COLUMN_WIDTH - effectiveResizableWidth * 0.2;
-  }, []);
 
   const stopDragging = () => {
     dragStateRef.current.isDown = false;
@@ -310,15 +299,15 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
     scrollRef.current.scrollLeft = dragStateRef.current.scrollLeft - diff;
   };
 
-  const scrollToDayIndex = (index: number) => {
-    if (!scrollRef.current) return;
-    scrollRef.current.scrollTo({ left: index * DAY_COLUMN_WIDTH, behavior: 'smooth' });
-  };
-
   const scrollByDays = (direction: number) => {
     if (!scrollRef.current) return;
     scrollRef.current.scrollBy({ left: direction * SCROLL_STEP_DAYS * DAY_COLUMN_WIDTH, behavior: 'smooth' });
   };
+
+  useEffect(() => {
+    if (!scrollRef.current) return;
+    scrollRef.current.scrollTo({ left: PAST_DAYS * DAY_COLUMN_WIDTH, behavior: 'smooth' });
+  }, [machineStatusFilter, categoryFilter, searchTerm]);
 
   const startResizing = (event: React.MouseEvent<HTMLTableCellElement>) => {
     event.preventDefault();
@@ -342,7 +331,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
 
   const resetFilters = () => {
     setSearchTerm('');
-    setStatusFilter('all');
+    setMachineStatusFilter('all');
     setCategoryFilter('all');
   };
 
@@ -524,20 +513,23 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
           />
 
           <FilterPanel className="xl:grid-cols-[minmax(0,1.3fr)_auto] xl:items-end">
-            <div className="grid gap-4 md:grid-cols-3">
-              <div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
+              <label className="flex flex-col gap-1.5 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)] sm:hidden">
+                搜索
+                <TextInput value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="设备名 / 序列号 / 客户名" />
+              </label>
+              <div className="hidden sm:block">
                 <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">搜索</p>
                 <TextInput value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="设备名 / 序列号 / 客户名" />
               </div>
               <div>
-                <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">订单状态</p>
-                <SelectInput value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-                  <option value="all">全部状态</option>
-                  <option value="pending_payment">待支付</option>
-                  <option value="confirmed">已确认</option>
-                  <option value="using">租用中</option>
-                  <option value="returned">已归还</option>
-                  <option value="cancelled">已取消</option>
+                <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">机器的状态</p>
+                <SelectInput value={machineStatusFilter} onChange={(e) => setMachineStatusFilter(e.target.value as EffectiveEquipmentStatus | 'all')}>
+                  <option value="all">全部</option>
+                  <option value="available">闲置</option>
+                  <option value="pending">待发货</option>
+                  <option value="rented">在租</option>
+                  <option value="overdue">逾期未还</option>
                 </SelectInput>
               </div>
               <div>
@@ -550,13 +542,13 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
             </div>
 
             <div className="flex flex-col gap-3 xl:items-end">
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="-mx-1 flex flex-nowrap items-center gap-1.5 overflow-x-auto px-1 pb-1 sm:mx-0 sm:flex-wrap sm:gap-2 sm:overflow-visible sm:px-0 sm:pb-0">
                 <SecondaryButton onClick={() => scrollByDays(-1)}><ChevronLeft className="h-4 w-4" />上周</SecondaryButton>
                 <PrimaryButton onClick={() => scrollToDayIndex(PAST_DAYS)}>跳转今天</PrimaryButton>
                 <SecondaryButton onClick={() => scrollByDays(1)}>下周<ChevronRight className="h-4 w-4" /></SecondaryButton>
                 <SecondaryButton onClick={resetFilters}><RotateCcw className="h-4 w-4" />重置筛选</SecondaryButton>
               </div>
-              <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--text-muted)]">
+              <div className="-mx-1 flex flex-nowrap gap-1.5 overflow-x-auto px-1 text-xs text-[var(--text-muted)] sm:flex-wrap sm:gap-2 sm:overflow-visible sm:px-0">
                 <StatBadge tone="slate">范围：{toDateKey(days[0])} ~ {toDateKey(days[days.length - 1])}</StatBadge>
                 <StatBadge tone="slate">当前结果：{filteredEquipment.length} 台 / {totalOrders} 条排期</StatBadge>
               </div>
@@ -570,10 +562,13 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
           onMouseLeave={stopDragging}
           onMouseUp={stopDragging}
           onMouseMove={handleMouseMove}
-          className={cn('overflow-x-auto overflow-y-visible p-4 select-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden', isDragging ? 'cursor-grabbing' : 'cursor-grab')}
+          className={cn('overflow-x-auto overflow-y-visible select-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden', isDragging ? 'cursor-grabbing' : 'cursor-grab')}
         >
+          <div className="py-4">
           {filteredEquipment.length === 0 ? (
-            <EmptyState>当前筛选条件下暂无排期数据</EmptyState>
+            <div className="p-4">
+              <EmptyState>当前筛选条件下暂无排期数据</EmptyState>
+            </div>
           ) : (
             <table className="w-full min-w-[5200px] table-fixed border-collapse text-xs sm:min-w-[7000px]">
               <thead>
@@ -592,7 +587,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
                       <th
                         key={`${group.label}-${group.startIndex}`}
                         colSpan={group.span}
-                        className={cn('border-b border-slate-100 bg-white px-3 py-2 text-left text-[11px] font-medium uppercase tracking-[0.14em] text-slate-500', containsToday && 'bg-indigo-50 text-indigo-600')}
+                        className={cn('border-b border-slate-100 bg-white px-3 py-2 text-left text-[11px] font-medium uppercase tracking-[0.14em] text-slate-500', containsToday && 'bg-indigo-100 text-indigo-700')}
                       >
                         {group.label}
                       </th>
@@ -611,13 +606,14 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
                         className={cn(
                           'relative border-b border-slate-100 bg-white px-1 py-3 text-center font-medium',
                           holiday ? 'bg-rose-50/80 text-rose-600' : weekend ? 'bg-slate-50 text-slate-500' : 'text-slate-500',
-                          todayColumn && 'z-10 bg-indigo-50'
+                          todayColumn && 'z-10 bg-indigo-100/80'
                         )}
                         style={{ width: DAY_COLUMN_WIDTH }}
                       >
-                        {todayColumn ? <span className="pointer-events-none absolute inset-y-0 left-0 w-px bg-indigo-300" /> : null}
-                        <div className={cn('mx-auto flex w-fit items-center gap-1 rounded-md px-2 py-1', todayColumn && 'bg-white font-semibold text-indigo-600 ring-1 ring-indigo-100')}>
+                        {todayColumn ? <span className="pointer-events-none absolute inset-y-0 left-0 w-0.5 bg-indigo-500" /> : null}
+                        <div className={cn('mx-auto flex w-fit items-center gap-1 rounded-md px-2 py-1', todayColumn && 'bg-white font-bold text-indigo-700 shadow-sm ring-2 ring-indigo-400')}>
                           <span>{formatDayLabel(date)}</span>
+                          {todayColumn ? <span className="text-[10px] font-semibold">今</span> : null}
                           {holiday ? <span className="text-[10px] font-semibold">休</span> : null}
                         </div>
                       </th>
@@ -627,7 +623,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
               </thead>
               <tbody>
                 {filteredEquipment.map((item, rowIndex) => {
-                  const effectiveStatus = getEffectiveEquipmentStatus(item);
+                  const effectiveStatus = getEffectiveEquipmentStatus(item, today);
                   const equipmentStatus = getEquipmentStatusBadge(effectiveStatus);
                   const EquipmentStatusIcon = equipmentStatus.icon;
 
@@ -745,6 +741,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
               </tbody>
             </table>
           )}
+          </div>
         </div>
       </SurfaceCard>
 

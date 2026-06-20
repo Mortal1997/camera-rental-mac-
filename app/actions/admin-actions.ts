@@ -262,7 +262,7 @@ export async function checkEquipmentConflict(
 
 export async function createManualOrder(
   formData: FormData
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; order?: Order }> {
   const user = await requireAuth();
   const supabase = await createClient();
 
@@ -298,19 +298,23 @@ export async function createManualOrder(
     };
   }
 
-  const { error } = await supabase.from('orders').insert({
-    equipment_id,
-    customer_name,
-    customer_phone,
-    shipping_address,
-    start_date,
-    end_date,
-    deposit_exemption,
-    total_price,
-    deposit_paid: 0,
-    status: 'pending_payment',
-    user_id: user.id,
-  });
+  const { data, error } = await supabase
+    .from('orders')
+    .insert({
+      equipment_id,
+      customer_name,
+      customer_phone,
+      shipping_address,
+      start_date,
+      end_date,
+      deposit_exemption,
+      total_price,
+      deposit_paid: 0,
+      status: 'pending_payment',
+      user_id: user.id,
+    })
+    .select('*')
+    .single();
 
   if (error) {
     console.error('Error creating manual order:', error);
@@ -318,13 +322,14 @@ export async function createManualOrder(
   }
 
   revalidatePath('/admin');
-  revalidatePath('/admin/pending');
-  return { success: true };
+  revalidatePath('/admin/orders');
+  revalidatePath('/admin/orders/pending');
+  return { success: true, order: (data ?? null) as Order | undefined };
 }
 
 export async function bulkCreateOrders(
   records: Array<Record<string, unknown>>
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; orders?: Order[] }> {
   const user = await requireAuth();
 
   if (!Array.isArray(records) || records.length === 0) {
@@ -337,7 +342,10 @@ export async function bulkCreateOrders(
     return { ...clean, status: 'confirmed', user_id: user.id };
   });
 
-  const { error } = await supabaseAdmin.from('orders').insert(payload);
+  const { data, error } = await supabaseAdmin
+    .from('orders')
+    .insert(payload)
+    .select('*');
 
   if (error) {
     console.error('Error bulk creating orders:', error);
@@ -347,7 +355,7 @@ export async function bulkCreateOrders(
   revalidatePath('/admin');
   revalidatePath('/admin/orders');
   revalidatePath('/admin/orders/pending');
-  return { success: true };
+  return { success: true, orders: (data ?? []) as Order[] };
 }
 
 export async function processExternalOrder(

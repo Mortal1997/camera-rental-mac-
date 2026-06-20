@@ -1,7 +1,12 @@
 import { getAdminData } from '../../actions/admin-actions';
-import { Boxes, ChartColumn, CircleDollarSign, PackageCheck } from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { EmptyState, StatBadge, TableHead, TableShell, Td, Th, Tr, cn } from '../components/ui';
+import type { EquipmentWithOrders } from '../../actions/types';
+import { getEffectiveEquipmentStatus } from '../../../lib/equipment-status';
+import { AlertTriangle, Boxes, ChartColumn, CircleDollarSign, PackageCheck, Truck } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
+import { StatBadge, cn } from '../components/ui';
+import { FlippableStatusChart } from './FlippableStatusChart';
+import { MonthlyRevenueLineChart, type MonthlyRevenuePoint } from './MonthlyRevenueLineChart';
+import { EquipmentRevenueSeriesChart } from './EquipmentRevenueSeriesChart';
 
 export const dynamic = 'force-dynamic';
 
@@ -65,35 +70,28 @@ export default async function DashboardPage() {
   const monthlyOrderCount = monthlyOrders.length;
   const previousMonthOrderCount = previousMonthOrders.length;
 
-  // 活跃租赁状态集合：待发货 / 已确认 / 已发货 / 租用中
-  const ACTIVE_STATUSES = new Set(['pending_payment', 'confirmed', 'shipped', 'using']);
-
-  // 统计在外租赁机器数 = 有活跃订单关联的不重复 equipment_id 数
-  const activeEquipmentIds = new Set<string>();
-  for (const order of orders) {
-    if (ACTIVE_STATUSES.has(order.status) && order.equipment_id) {
-      activeEquipmentIds.add(order.equipment_id);
-    }
+  // 状态统计：对每台设备做一次 getEffectiveEquipmentStatus，结果唯一（不重复计数）
+  //   - 与排期看板共享同一份规则：以今天横切排期表
+  //   - 每台设备只能属于 闲置 / 待发货 / 出租中 / 维修中 其一
+  const equipmentWithOrders: EquipmentWithOrders[] = (equipment as EquipmentWithOrders[]).map((item) => ({
+    ...item,
+    orders: orders.filter((order) => order.equipment_id === item.id),
+  }));
+  const statusSummary = {
+    idle: 0,
+    pending: 0,
+    using: 0,
+    overdue: 0,
+    maintenance: 0,
+  };
+  for (const item of equipmentWithOrders) {
+    const status = getEffectiveEquipmentStatus(item, now);
+    if (status === 'available') statusSummary.idle += 1;
+    else if (status === 'pending') statusSummary.pending += 1;
+    else if (status === 'rented') statusSummary.using += 1;
+    else if (status === 'overdue') statusSummary.overdue += 1;
+    else if (status === 'maintenance') statusSummary.maintenance += 1;
   }
-
-  // 统计维修中机器数（直接查 equipment.status）
-  const maintenanceCount = equipment.filter((item) => item.status === 'maintenance').length;
-
-  // 在外 + 维修中 + 在库 = 总数；闲置 = 总数 - 在外 - 维修中
-  const outboundCount = activeEquipmentIds.size;
-  const idleCount = equipment.length - outboundCount - maintenanceCount;
-
-  const statusSummary = { idle: Math.max(0, idleCount), outbound: outboundCount, maintenance: maintenanceCount };
-
-  const categoryMap = new Map<string, number>();
-  for (const item of equipment) {
-    const key = item.category?.trim() || '未分类';
-    categoryMap.set(key, (categoryMap.get(key) ?? 0) + 1);
-  }
-
-  const categoryStats = Array.from(categoryMap.entries())
-    .map(([category, count]) => ({ category, count }))
-    .sort((a, b) => b.count - a.count || a.category.localeCompare(b.category));
 
   const equipmentMap = new Map(equipment.map((item) => [item.id, item]));
   const revenueMap = new Map<string, { equipmentName: string; serialNumber: string; revenue: number; orderCount: number }>();
@@ -113,12 +111,67 @@ export default async function DashboardPage() {
     revenueMap.set(equipmentId, current);
   }
 
-  const revenueRanking = Array.from(revenueMap.entries())
-    .map(([equipmentId, value]) => ({ equipmentId, ...value }))
-    .sort((a, b) => b.revenue - a.revenue || b.orderCount - a.orderCount || a.equipmentName.localeCompare(b.equipmentName));
+  // 当年 12 个月营收折线图数据（按 start_date / created_at 落到月份桶）
+  // 即使某月为 0 也保留点位（折线在底部仍可见）
+  const monthlyRevenueByMonth: MonthlyRevenuePoint[] = (() => {
+    const buckets = Array.from({ length: 12 }, () => ({ revenue: 0, orderCount: 0 }));
+    for (const order of orders) {
+      const startDate = parseDate(order.start_date);
+      const createdDate = parseDate(order.created_at);
+      // 优先 start_date；都为空时跳过
+      const date = startDate ?? createdDate;
+      if (!date) continue;
+      if (date.getFullYear() !== currentYear) continue;
+      const monthIdx = date.getMonth(); // 0..11
+      buckets[monthIdx].revenue += Number(order.total_price || 0);
+      buckets[monthIdx].orderCount += 1;
+    }
+    return buckets.map((b, i) => ({ month: i + 1, revenue: b.revenue, orderCount: b.orderCount }));
+  })();
 
-  const maxCategoryCount = Math.max(...categoryStats.map((item) => item.count), 1);
-  const totalStatus = statusSummary.idle + statusSummary.outbound + statusSummary.maintenance;
+  // 柱状图数据：所有设备按 equipment 数组顺序（默认按 name 升序）
+  // 即使两月都为 0 也保留设备（在 0 轴上占位，体现"全设备"的完整性）
+  // 前端组件负责：≤20 占满卡片，>20 横向滚动
+  const previousRevenueMap = new Map<string, number>();
+  for (const order of previousMonthOrders) {
+    const equipmentId = order.equipment_id;
+    if (!equipmentId) continue;
+    previousRevenueMap.set(
+      equipmentId,
+      (previousRevenueMap.get(equipmentId) ?? 0) + Number(order.total_price || 0),
+    );
+  }
+  const inCurrentMonth = (order: { start_date?: string | null; created_at?: string | null }) =>
+    isSameMonth(parseDate(order.start_date), currentYear, currentMonth) ||
+    isSameMonth(parseDate(order.created_at), currentYear, currentMonth);
+  const inPreviousMonth = (order: { start_date?: string | null; created_at?: string | null }) =>
+    isSameMonth(parseDate(order.start_date), previousYear, previousMonth) ||
+    isSameMonth(parseDate(order.created_at), previousYear, previousMonth);
+  const revenueSeries = equipment.map((item) => ({
+    equipmentId: item.id,
+    name: item.name,
+    serialNumber: item.serial_number ?? '—',
+    current: revenueMap.get(item.id)?.revenue ?? 0,
+    previous: previousRevenueMap.get(item.id) ?? 0,
+  }));
+
+  // 翻转面的「所有订单」：当月 + 上月内全部设备的所有订单（不限 20）
+  const equipmentNameMap = new Map(equipment.map((e) => [e.id, e.name]));
+  const seriesOrders = orders
+    .filter((order) => inCurrentMonth(order) || inPreviousMonth(order))
+    .map((order) => ({
+      id: order.id,
+      equipmentId: order.equipment_id ?? null,
+      equipmentName: order.equipment_id ? (equipmentNameMap.get(order.equipment_id) ?? null) : null,
+      customer_name: order.customer_name ?? null,
+      start_date: order.start_date ?? null,
+      end_date: order.end_date ?? null,
+      status: order.status,
+      total_price: Number(order.total_price || 0),
+      bucket: inCurrentMonth(order) ? ('current' as const) : ('previous' as const),
+    }));
+
+  const totalStatus = statusSummary.idle + statusSummary.pending + statusSummary.using + statusSummary.overdue + statusSummary.maintenance;
 
   const revenueDelta = getDeltaText(monthlyRevenue, previousMonthRevenue, ' 元');
   const orderDelta = getDeltaText(monthlyOrderCount, previousMonthOrderCount, ' 单');
@@ -134,7 +187,7 @@ export default async function DashboardPage() {
         <StatBadge tone="slate">统计周期：{monthLabel}</StatBadge>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <Card>
           <CardContent className="pt-5">
             <div className="flex items-center gap-2.5">
@@ -164,13 +217,49 @@ export default async function DashboardPage() {
         <Card>
           <CardContent className="pt-5">
             <div className="flex items-center gap-2.5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/70 bg-slate-100 text-slate-700">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/70 bg-sky-50 text-sky-700">
+                <Truck className="h-4 w-4" />
+              </div>
+              <p className="text-[12px] font-medium text-muted-foreground">当前待发货</p>
+            </div>
+            <p className="mt-4 text-[28px] font-semibold tracking-[-0.04em] text-foreground">{statusSummary.pending}</p>
+            <p className="mt-1.5 text-[12px] font-medium text-muted-foreground">含已确认 / 待付款</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-5">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/70 bg-amber-50 text-amber-700">
                 <PackageCheck className="h-4 w-4" />
               </div>
-              <p className="text-[12px] font-medium text-muted-foreground">当前在外租赁</p>
+              <p className="text-[12px] font-medium text-muted-foreground">当前出租中</p>
             </div>
-            <p className="mt-4 text-[28px] font-semibold tracking-[-0.04em] text-foreground">{statusSummary.outbound}</p>
-            <p className="mt-1.5 text-[12px] font-medium text-muted-foreground">含待发货 / 已确认 / 使用中</p>
+            <p className="mt-4 text-[28px] font-semibold tracking-[-0.04em] text-foreground">{statusSummary.using}</p>
+            <p className="mt-1.5 text-[12px] font-medium text-muted-foreground">已发货正在使用</p>
+          </CardContent>
+        </Card>
+
+        <Card className={statusSummary.overdue > 0 ? 'border-rose-200 bg-rose-50/50' : ''}>
+          <CardContent className="pt-5">
+            <div className="flex items-center gap-2.5">
+              <div className={cn(
+                'flex h-9 w-9 items-center justify-center rounded-xl border',
+                statusSummary.overdue > 0
+                  ? 'border-rose-200 bg-rose-100 text-rose-700'
+                  : 'border-border/70 bg-slate-100 text-slate-700',
+              )}>
+                <AlertTriangle className="h-4 w-4" />
+              </div>
+              <p className="text-[12px] font-medium text-muted-foreground">逾期未还</p>
+            </div>
+            <p className={cn(
+              'mt-4 text-[28px] font-semibold tracking-[-0.04em]',
+              statusSummary.overdue > 0 ? 'text-rose-700' : 'text-foreground',
+            )}>
+              {statusSummary.overdue}
+            </p>
+            <p className="mt-1.5 text-[12px] font-medium text-muted-foreground">已过 end_date 未归还</p>
           </CardContent>
         </Card>
 
@@ -188,102 +277,32 @@ export default async function DashboardPage() {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader>
-            <CardTitle>型号库存概览</CardTitle>
-            <CardDescription>共 {equipment.length} 台</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {categoryStats.length === 0 ? (
-              <EmptyState>暂无数据</EmptyState>
-            ) : (
-              categoryStats.map((item) => (
-                <div key={item.category} className="space-y-1.5">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium text-foreground">{item.category}</span>
-                    <span className="text-muted-foreground">{item.count} 台</span>
-                  </div>
-                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                    <div className="h-full rounded-full bg-foreground/60" style={{ width: `${(item.count / maxCategoryCount) * 100}%` }} />
-                  </div>
-                </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 items-stretch lg:grid-cols-2 gap-4">
+        <MonthlyRevenueLineChart
+          year={currentYear}
+          currentMonth={currentMonth + 1}
+          points={monthlyRevenueByMonth}
+        />
 
-        <Card>
-          <CardHeader>
-            <CardTitle>当前状态占比</CardTitle>
-            <CardDescription>总计 {totalStatus} 台</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {totalStatus === 0 ? (
-              <EmptyState>暂无数据</EmptyState>
-            ) : (
-              [
-                { label: '正常闲置', count: statusSummary.idle, bar: 'bg-emerald-500', text: 'text-foreground' },
-                { label: '出租中 / 待发货', count: statusSummary.outbound, bar: 'bg-sky-500', text: 'text-foreground' },
-                { label: '维修中', count: statusSummary.maintenance, bar: 'bg-rose-500', text: 'text-foreground' },
-              ].map((item) => (
-                <div key={item.label} className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className={cn('h-2.5 w-2.5 rounded-full', item.bar)} />
-                      <span className="text-sm font-medium text-foreground">{item.label}</span>
-                    </div>
-                    <span className={cn('text-xl font-semibold', item.text)}>{item.count}</span>
-                  </div>
-                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                    <div className={cn('h-full rounded-full', item.bar)} style={{ width: `${(item.count / totalStatus) * 100}%` }} />
-                  </div>
-                </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
+        <FlippableStatusChart
+          total={totalStatus}
+          counts={{
+            idle: statusSummary.idle,
+            pending: statusSummary.pending,
+            using: statusSummary.using,
+            overdue: statusSummary.overdue,
+            maintenance: statusSummary.maintenance,
+          }}
+        />
       </div>
 
-      <Card>
-        <CardHeader className="flex-row items-center justify-between gap-3">
-          <div className="space-y-1">
-            <CardTitle>本月单机创收榜</CardTitle>
-            <CardDescription>按设备维度统计本月出租次数与累计创收金额</CardDescription>
-          </div>
-          <p className="text-sm text-muted-foreground shrink-0">{revenueRanking.length} 台上榜</p>
-        </CardHeader>
-        <CardContent>
-          <TableShell>
-            {revenueRanking.length === 0 ? (
-              <EmptyState>暂无数据</EmptyState>
-            ) : (
-              <table className="w-full min-w-[720px] text-sm">
-                <TableHead>
-                  <tr>
-                    <Th>排名</Th>
-                    <Th>设备名称</Th>
-                    <Th>SN号</Th>
-                    <Th>本月出租次数</Th>
-                    <Th>本月累计创收金额</Th>
-                  </tr>
-                </TableHead>
-                <tbody>
-                  {revenueRanking.map((item, index) => (
-                    <Tr key={item.equipmentId}>
-                      <Td className="font-semibold text-muted-foreground">#{index + 1}</Td>
-                      <Td className="font-medium text-foreground">{item.equipmentName}</Td>
-                      <Td className="font-mono text-xs text-muted-foreground">{item.serialNumber}</Td>
-                      <Td className="text-muted-foreground">{item.orderCount}</Td>
-                      <Td className="font-semibold text-foreground">{formatCurrency(item.revenue)}</Td>
-                    </Tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </TableShell>
-        </CardContent>
-      </Card>
+      <EquipmentRevenueSeriesChart
+        currentLabel={`${currentYear} 年 ${currentMonth + 1} 月`}
+        previousLabel={`${previousYear} 年 ${previousMonth + 1} 月`}
+        rows={revenueSeries}
+        totalEquipmentCount={equipment.length}
+        orders={seriesOrders}
+      />
     </div>
   );
 }

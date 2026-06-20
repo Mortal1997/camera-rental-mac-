@@ -544,10 +544,19 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
       formData.set('total_price', formValues.total_price);
 
       const result = await createManualOrder(formData);
-      if (!result.success) {
+      if (!result.success || !result.order) {
         setFormError(result.error ?? '创建订单失败');
         return;
       }
+
+      const createdOrder = result.order;
+      const matchedEquipment = equipmentList.find((eq) => eq.id === createdOrder.equipment_id);
+      const orderWithEquipment: Order = matchedEquipment
+        ? { ...createdOrder, equipment: matchedEquipment }
+        : createdOrder;
+
+      setDisplayOrders((current) => [orderWithEquipment, ...current]);
+      showToast('success', '订单已创建');
       closeModal();
     });
   };
@@ -592,6 +601,18 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
       if (!result.success) {
         setImportError(result.error ?? '批量导入失败');
         return;
+      }
+
+      const createdOrders = result.orders ?? [];
+      const equipmentById = new Map(equipmentList.map((eq) => [eq.id, eq]));
+      const ordersWithEquipment: Order[] = createdOrders.map((order) => {
+        const matched = order.equipment_id ? equipmentById.get(order.equipment_id) : undefined;
+        return matched ? { ...order, equipment: matched } : order;
+      });
+
+      if (ordersWithEquipment.length > 0) {
+        setDisplayOrders((current) => [...ordersWithEquipment, ...current]);
+        showToast('success', `已导入 ${ordersWithEquipment.length} 单订单`);
       }
 
       closeImportPreview();

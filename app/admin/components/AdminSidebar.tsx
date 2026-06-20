@@ -105,23 +105,23 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
     <div
       className={cn(
         'flex h-full shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-all duration-300',
-        isCollapsed ? 'w-16' : 'w-64'
+        isCollapsed ? 'w-14' : 'w-56'
       )}
     >
       {/* Logo / brand header */}
       <div className={cn(
-        'border-b border-sidebar-border px-3 py-3 shrink-0 flex items-center',
+        'border-b border-sidebar-border px-2.5 py-2.5 shrink-0 flex items-center',
         isCollapsed ? 'justify-center' : 'justify-start'
       )}>
         <Link
           href="/admin/dashboard"
           className={cn(
-            'flex h-auto items-center gap-3 rounded-2xl px-3 py-3 hover:bg-sidebar-accent transition-all duration-300 overflow-hidden',
-            isCollapsed ? 'w-10 justify-center' : 'flex-1 min-w-0'
+            'flex h-auto items-center gap-2.5 rounded-xl px-2 py-2 hover:bg-sidebar-accent transition-all duration-300 overflow-hidden',
+            isCollapsed ? 'w-9 justify-center' : 'flex-1 min-w-0'
           )}
         >
-          <div className="flex aspect-square size-11 shrink-0 items-center justify-center rounded-2xl bg-sidebar-accent text-sidebar-foreground ring-1 ring-sidebar-border">
-            <Camera className="size-5" />
+          <div className="flex aspect-square size-9 shrink-0 items-center justify-center rounded-xl bg-sidebar-accent text-sidebar-foreground ring-1 ring-sidebar-border">
+            <Camera className="size-4" />
           </div>
           <div
             className={cn(
@@ -130,24 +130,24 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
             )}
           >
             <span className="truncate font-semibold text-sidebar-foreground">Camera Rental</span>
-            <span className="truncate text-xs text-sidebar-foreground/60">后台管理系统</span>
+            <span className="truncate text-[11px] text-sidebar-foreground/60">后台管理系统</span>
           </div>
         </Link>
         {/* Mobile close button */}
         <button
           onClick={onMobileClose}
-          className="flex size-9 shrink-0 items-center justify-center rounded-xl text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground md:hidden"
+          className="flex size-8 shrink-0 items-center justify-center rounded-lg text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground lg:hidden"
           aria-label="关闭菜单"
         >
-          <X className="size-5" />
+          <X className="size-4" />
         </button>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 px-2 py-3 overflow-y-auto">
+      <nav className="flex-1 px-2 py-2 overflow-y-auto">
         <p
           className={cn(
-            'mb-2 px-3 text-[11px] font-medium uppercase tracking-widest text-sidebar-foreground/40 transition-all duration-300',
+            'mb-1.5 px-2.5 text-[11px] font-medium uppercase tracking-widest text-sidebar-foreground/40 transition-all duration-300',
             isCollapsed ? 'opacity-0 h-0 mb-0 py-0 min-h-0 overflow-hidden' : ''
           )}
         >
@@ -164,7 +164,7 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
                   href={item.href}
                   onClick={onMobileClose}
                   className={cn(
-                    'flex h-11 items-center gap-3 rounded-xl px-3 text-sm transition-all',
+                    'flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-[13px] transition-all',
                     isActive
                       ? 'bg-sidebar-primary font-medium text-sidebar-primary-foreground shadow-sm'
                       : 'text-sidebar-foreground/72 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
@@ -187,7 +187,7 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
 
         <p
           className={cn(
-            'mb-2 mt-5 px-3 text-[11px] font-medium uppercase tracking-widest text-sidebar-foreground/40 transition-all duration-300',
+            'mb-1.5 mt-4 px-2.5 text-[11px] font-medium uppercase tracking-widest text-sidebar-foreground/40 transition-all duration-300',
             isCollapsed ? 'opacity-0 h-0 mb-0 py-0 min-h-0 overflow-hidden' : ''
           )}
         >
@@ -204,7 +204,7 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
                   href={item.href}
                   onClick={onMobileClose}
                   className={cn(
-                    'flex h-11 items-center gap-3 rounded-xl px-3 text-sm transition-all',
+                    'flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-[13px] transition-all',
                     isActive
                       ? 'bg-sidebar-primary font-medium text-sidebar-primary-foreground shadow-sm'
                       : 'text-sidebar-foreground/72 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
@@ -227,10 +227,10 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
       </nav>
 
       {/* Collapse toggle button (desktop) */}
-      <div className="hidden md:flex shrink-0 border-t border-sidebar-border p-2">
+      <div className="hidden lg:flex shrink-0 border-t border-sidebar-border p-1.5">
         <button
           onClick={() => onCollapsedChange(!isCollapsed)}
-          className="flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all"
+          className="flex w-full items-center justify-center gap-2 rounded-lg px-2 py-1.5 text-[13px] text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all"
           aria-label={isCollapsed ? '展开侧边栏' : '折叠侧边栏'}
         >
           <div className="flex size-4 shrink-0 items-center justify-center">
@@ -251,14 +251,14 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
       </div>
 
       {/* User card — pinned to bottom */}
-      <div className="shrink-0 border-t border-sidebar-border p-2">
+      <div className="shrink-0 border-t border-sidebar-border p-1.5">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
               disabled={signingOut}
               className={cn(
-                'flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all',
+                'flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-all',
                 'hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring',
                 signingOut && 'opacity-50 pointer-events-none'
               )}
@@ -309,14 +309,14 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
   return (
     <>
       {/* Desktop sidebar */}
-      <div className="hidden md:block shrink-0">
+      <div className="hidden lg:block shrink-0">
         {sidebarContent}
       </div>
 
       {/* Mobile overlay + drawer */}
       <div
         className={cn(
-          'md:hidden fixed inset-0 z-40 transition-all duration-300',
+          'lg:hidden fixed inset-0 z-40 transition-all duration-300',
           isMobileOpen ? 'visible' : 'invisible pointer-events-none'
         )}
       >
@@ -332,7 +332,7 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
         {/* Drawer */}
         <div
           className={cn(
-            'absolute left-0 top-0 h-full z-50 transition-transform duration-300',
+            'absolute left-0 top-0 h-full z-50 max-w-[85vw] transition-transform duration-300',
             isMobileOpen ? 'translate-x-0' : '-translate-x-full'
           )}
         >

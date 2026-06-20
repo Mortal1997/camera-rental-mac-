@@ -1,6 +1,6 @@
 "use server";
 
-import { supabase } from '../../lib/supabaseClient';
+import { createClient } from '@/lib/supabase/server';
 import type { OrderWithEquipment } from './types';
 
 export type FinancialMonthlySummary = {
@@ -35,6 +35,7 @@ export async function getFinancialReport(
   startDate?: string,
   endDate?: string
 ): Promise<FinancialReport> {
+  const supabase = await createClient();
   const fallbackRange = getDefaultRange();
   const rangeStart = startDate?.trim() || fallbackRange.startDate;
   const rangeEnd = endDate?.trim() || fallbackRange.endDate;
