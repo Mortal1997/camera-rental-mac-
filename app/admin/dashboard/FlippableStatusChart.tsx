@@ -126,6 +126,10 @@ export function FlippableStatusChart({ total, counts }: FlippableStatusChartProp
                       paddingAngle={2}
                       strokeWidth={2}
                       stroke="#fff"
+                      isAnimationActive
+                      animationDuration={1200}
+                      animationBegin={0}
+                      animationEasing="ease-out"
                     >
                       {pieData.map((entry) => (
                         <Cell key={entry.key} fill={entry.chartColor} />

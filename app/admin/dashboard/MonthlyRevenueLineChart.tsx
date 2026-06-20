@@ -107,16 +107,15 @@ export function MonthlyRevenueLineChart({ year, currentMonth, points }: MonthlyR
         </div>
       </CardHeader>
 
-      <CardContent className="flex-1">
+<CardContent className="flex-1">
         {!hasAnyRevenue ? (
           <EmptyState>{year} 年暂无营收数据</EmptyState>
         ) : (
-          <>
-            <ChartContainer
-              config={CHART_CONFIG}
-              className="h-[260px] w-full"
-              initialDimension={{ width: 720, height: 260 }}
-            >
+          <ChartContainer
+            config={CHART_CONFIG}
+            className="h-[260px] w-full"
+            initialDimension={{ width: 720, height: 260 }}
+          >
               <LineChart
                 data={chartData}
                 margin={{ top: 12, right: 16, left: 8, bottom: 8 }}
@@ -182,11 +181,13 @@ export function MonthlyRevenueLineChart({ year, currentMonth, points }: MonthlyR
                   strokeWidth={2.5}
                   dot={{ r: 4, fill: '#10b981', strokeWidth: 2, stroke: '#fff' }}
                   activeDot={{ r: 6, strokeWidth: 2, stroke: '#fff' }}
-                  isAnimationActive={false}
+                  isAnimationActive
+                  animationDuration={1200}
+                  animationBegin={0}
+                  animationEasing="ease-out"
                 />
-              </LineChart>
-            </ChartContainer>
-          </>
+</LineChart>
+          </ChartContainer>
         )}
       </CardContent>
     </Card>

@@ -297,7 +297,10 @@ export function EquipmentRevenueSeriesChart({
                           radius={[3, 3, 0, 0]}
                           cursor="pointer"
                           onClick={handleBarClick}
-                          isAnimationActive={false}
+                          isAnimationActive
+                          animationDuration={1000}
+                          animationBegin={0}
+                          animationEasing="ease-out"
                         />
                         <Bar
                           dataKey="current"
@@ -306,7 +309,10 @@ export function EquipmentRevenueSeriesChart({
                           radius={[3, 3, 0, 0]}
                           cursor="pointer"
                           onClick={handleBarClick}
-                          isAnimationActive={false}
+                          isAnimationActive
+                          animationDuration={1000}
+                          animationBegin={200}
+                          animationEasing="ease-out"
                         />
                       </BarChart>
                     </ChartContainer>

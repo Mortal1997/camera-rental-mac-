@@ -504,7 +504,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
 
   return (
     <>
-      <SurfaceCard className="overflow-hidden p-0">
+      <SurfaceCard className="animate-chart-enter-delayed overflow-hidden p-0">
         <div className="border-b border-slate-100 px-4 py-4 sm:px-6 sm:py-5">
           <SectionHeader
             title="排期看板"
