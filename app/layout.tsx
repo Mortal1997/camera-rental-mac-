@@ -5,7 +5,11 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 
 const inter = Inter({subsets:['latin'],variable:'--font-sans'});
 
-export const metadata = {  title: '小玄租赁 | 智能租赁管理中控台',  description: '智能相机租赁管理平台',}
+export const metadata = {
+  title: 'BANG BANG',
+  description: 'Professional Camera Rental Platform',
+  icons: { icon: '/icon.png' },
+}
 
 export default function RootLayout({
   children,

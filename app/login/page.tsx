@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
-import { Camera, Loader2 } from 'lucide-react';
+import Image from 'next/image';
+import { useEffect, useState, useTransition, useRef } from 'react';
+import { Loader2 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -17,6 +18,7 @@ function InputField({
   autoComplete,
   value,
   onChange,
+  onKeyDown,
 }: {
   id: string;
   label: string;
@@ -25,6 +27,7 @@ function InputField({
   autoComplete?: string;
   value?: string;
   onChange?: (value: string) => void;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
 }) {
   return (
     <div className="space-y-1.5">
@@ -39,6 +42,7 @@ function InputField({
         placeholder={placeholder}
         value={value}
         onChange={(event) => onChange?.(event.target.value)}
+        onKeyDown={onKeyDown}
         required
         className="h-10 w-full rounded-xl border border-input bg-background px-4 py-3 text-[14px] text-foreground shadow-sm transition-all outline-none placeholder:text-muted-foreground focus:border-foreground/30 focus:ring-2 focus:ring-foreground/10 disabled:cursor-not-allowed disabled:opacity-50"
       />
@@ -60,6 +64,7 @@ function AuthForm({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const formRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -99,12 +104,25 @@ function AuthForm({
 
   const resolvedConfirmPassword = mode === 'register' ? confirmPassword : undefined;
 
+  function handleSubmitInternal(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    handleSubmit(formData);
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      formRef.current?.requestSubmit();
+    }
+  }
+
   return (
-    <form action={handleSubmit} className="space-y-4">
+    <form ref={formRef} onSubmit={handleSubmitInternal} className="space-y-4">
       <InputField id="email" label="邮箱" type="email" placeholder="your@email.com" autoComplete="email" value={email} onChange={setEmail} />
-      <InputField id="password" label="密码" type="password" placeholder="••••••••" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} value={password} onChange={setPassword} />
+      <InputField id="password" label="密码" type="password" placeholder="••••••••" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} value={password} onChange={setPassword} onKeyDown={handleKeyDown} />
       {mode === 'register' && (
-        <InputField id="confirmPassword" label="确认密码" type="password" placeholder="••••••••" autoComplete="new-password" value={resolvedConfirmPassword} onChange={setConfirmPassword} />
+        <InputField id="confirmPassword" label="确认密码" type="password" placeholder="••••••••" autoComplete="new-password" value={resolvedConfirmPassword} onChange={setConfirmPassword} onKeyDown={handleKeyDown} />
       )}
 
       {error && (
@@ -157,12 +175,17 @@ export default function LoginPage() {
       <div className="w-full max-w-[420px]">
         {/* Logo */}
         <div className="mb-8 flex flex-col items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-foreground text-background shadow-sm">
-            <Camera className="h-6 w-6" />
-          </div>
+          <Image
+            src="/logo-login.png"
+            alt="BANG BANG"
+            width={56}
+            height={56}
+            style={{ width: 'auto', height: 'auto' }}
+            className="object-contain"
+          />
           <div className="text-center">
-            <h1 className="text-xl font-semibold tracking-tight text-foreground">Camera Rental</h1>
-            <p className="mt-1 text-sm text-muted-foreground">智能相机租赁管理平台</p>
+            <h1 className="text-xl font-bold tracking-widest uppercase text-foreground">BANG BANG</h1>
+            <p className="mt-1 text-sm text-muted-foreground tracking-widest uppercase">Rental</p>
           </div>
         </div>
 

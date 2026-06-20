@@ -30,14 +30,14 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           >
             <Menu className="size-5" />
           </button>
-          <p className="text-sm font-semibold text-foreground">小玄租赁运营后台</p>
+          <p className="text-sm font-semibold text-foreground">BANG BANG Rental</p>
         </header>
 
         {/* Desktop header */}
         <header className="hidden lg:flex h-[60px] shrink-0 items-center gap-3 border-b border-border/70 bg-background/96 px-4 lg:px-10 z-30">
           <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">Admin Console</p>
           <span className="h-3 w-px bg-border/50" aria-hidden />
-          <p className="text-sm font-semibold text-foreground">小玄租赁运营后台</p>
+          <p className="text-sm font-semibold text-foreground">BANG BANG Rental</p>
         </header>
 
         {/* Scrollable page content */}

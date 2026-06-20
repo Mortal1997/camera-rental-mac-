@@ -1,13 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   BadgeDollarSign,
   Boxes,
   CalendarDays,
-  Camera,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
@@ -109,33 +109,38 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
     >
       {/* Logo / brand header */}
       <div className={cn(
-        'border-b border-sidebar-border px-2.5 py-2.5 shrink-0 flex items-center',
-        isCollapsed ? 'justify-center' : 'justify-start'
+        'border-b border-sidebar-border shrink-0 flex items-center',
+        isCollapsed ? 'h-20 justify-center' : 'h-20 px-2.5'
       )}>
         <Link
           href="/admin/dashboard"
           className={cn(
-            'flex h-auto items-center gap-2.5 rounded-xl px-2 py-2 hover:bg-sidebar-accent transition-all duration-300 overflow-hidden',
-            isCollapsed ? 'w-9 justify-center' : 'flex-1 min-w-0'
+            'flex h-9 items-center rounded-xl hover:bg-sidebar-accent transition-all duration-300 overflow-hidden',
+            isCollapsed ? 'justify-center' : 'gap-2.5 px-2 flex-1 min-w-0'
           )}
         >
-          <div className="flex aspect-square size-9 shrink-0 items-center justify-center rounded-xl bg-sidebar-accent text-sidebar-foreground ring-1 ring-sidebar-border">
-            <Camera className="size-4" />
-          </div>
+          <Image
+            src="/logo.png"
+            alt="BANG BANG"
+            width={32}
+            height={32}
+            style={{ width: 'auto', height: 'auto' }}
+            className="object-contain shrink-0"
+          />
           <div
             className={cn(
               'grid flex-1 text-left text-sm leading-tight transition-all duration-300 overflow-hidden min-w-0',
               isCollapsed ? 'opacity-0 w-0 p-0' : 'opacity-100'
             )}
           >
-            <span className="truncate font-semibold text-sidebar-foreground">Camera Rental</span>
-            <span className="truncate text-[11px] text-sidebar-foreground/60">后台管理系统</span>
+            <span className="truncate font-bold text-sidebar-foreground tracking-widest uppercase">BANG BANG</span>
+            <span className="truncate text-[11px] text-sidebar-foreground/60 tracking-widest uppercase">Rental</span>
           </div>
         </Link>
         {/* Mobile close button */}
         <button
           onClick={onMobileClose}
-          className="flex size-8 shrink-0 items-center justify-center rounded-lg text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground lg:hidden"
+          className="flex size-9 shrink-0 items-center justify-center rounded-lg text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground lg:hidden"
           aria-label="关闭菜单"
         >
           <X className="size-4" />
@@ -229,7 +234,7 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
       <div className="hidden lg:flex shrink-0 border-t border-sidebar-border p-1.5">
         <button
           onClick={() => onCollapsedChange(!isCollapsed)}
-          className="flex w-full items-center justify-center gap-2 rounded-lg px-2 py-1.5 text-[13px] text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all"
+          className="flex w-full h-9 items-center justify-center gap-2 rounded-lg px-2 text-[13px] text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all"
           aria-label={isCollapsed ? '展开侧边栏' : '折叠侧边栏'}
         >
           <div className="flex size-4 shrink-0 items-center justify-center">
@@ -257,7 +262,7 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
               type="button"
               disabled={signingOut}
               className={cn(
-                'flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-all',
+                'flex w-full h-9 items-center gap-2.5 rounded-lg px-2 text-left transition-all',
                 'hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring',
                 signingOut && 'opacity-50 pointer-events-none'
               )}
