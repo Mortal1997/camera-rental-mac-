@@ -1,15 +1,10 @@
 "use server";
 
 import { revalidatePath } from 'next/cache';
-import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/service';
 import { pushDelivery, type ShippingMethod } from '@/lib/goofish/delivery';
 import type { Equipment, Order } from './types';
-
-const supabaseAdmin = createAdminClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
 
 async function requireAuth() {
   const supabase = await createClient();
@@ -136,6 +131,7 @@ export async function deleteEquipment(
 ): Promise<{ success: boolean; error?: string }> {
   // 先将与该设备关联的订单的 equipment_id 置空，再删除设备
   // 这样避免外键约束（ON DELETE RESTRICT）导致的删除失败
+  const supabaseAdmin = await createServiceClient();
   const { error: clearError } = await supabaseAdmin
     .from('orders')
     .update({ equipment_id: null })
@@ -176,6 +172,7 @@ export async function bulkCreateEquipment(
     return { ...clean, status: 'available', user_id: user.id };
   });
 
+  const supabaseAdmin = await createServiceClient();
   const { error } = await supabaseAdmin.from('equipment').insert(payload);
 
   if (error) {
@@ -342,6 +339,7 @@ export async function bulkCreateOrders(
     return { ...clean, status: 'confirmed', user_id: user.id };
   });
 
+  const supabaseAdmin = await createServiceClient();
   const { data, error } = await supabaseAdmin
     .from('orders')
     .insert(payload)
@@ -420,6 +418,7 @@ export async function processExternalOrder(
 export async function deleteOrder(
   orderId: string
 ): Promise<{ success: boolean; error?: string }> {
+  const supabaseAdmin = await createServiceClient();
   const { error } = await supabaseAdmin
     .from('orders')
     .delete()
@@ -584,6 +583,7 @@ export async function updateOrderFields(
   }
 ): Promise<{ success: boolean; error?: string }> {
   await requireAuth();
+  const supabaseAdmin = await createServiceClient();
   const { error } = await supabaseAdmin
     .from('orders')
     .update(fields)

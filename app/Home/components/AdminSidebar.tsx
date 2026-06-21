@@ -35,9 +35,25 @@ type NavItem = {
   matchPrefix?: string;
 };
 
+const navigationItems: NavItem[] = [
+  { href: '/admin', label: '排期看板', icon: CalendarDays, matchPrefix: '/admin' },
+  { href: '/admin/dashboard', label: '数据看板', icon: LayoutDashboard },
+  { href: '/admin/orders', label: '订单管理', icon: ClipboardList },
+  { href: '/admin/inventory', label: '仓库管理', icon: Boxes },
+  { href: '/admin/finance', label: '财务报表', icon: BadgeDollarSign },
+];
+
+const adminOnlyItems = [
+  { href: '/Home/approval', label: '审批管理', icon: ShieldCheck },
+] as const;
+
+const secondaryItems = [
+  { href: '/admin/settings', label: '系统设置', icon: Settings },
+] as const;
+
 function isActivePath(pathname: string, href: string, matchPrefix?: string) {
   if (matchPrefix) return pathname.startsWith(matchPrefix);
-  if (href === '/admin') return pathname === href;
+  if (href === '/Home') return pathname === href;
   return pathname.startsWith(href);
 }
 
@@ -97,22 +113,6 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
     router.refresh();
   }
 
-  const navigationItems: NavItem[] = [
-    { href: '/admin/dashboard', label: '数据看板', icon: LayoutDashboard },
-    { href: '/admin', label: '排期看板', icon: CalendarDays },
-    { href: '/admin/orders/dispatch', label: '订单管理', icon: ClipboardList, matchPrefix: '/admin/orders' },
-    { href: '/admin/inventory', label: '仓库管理', icon: Boxes },
-    { href: '/admin/finance', label: '财务报表', icon: BadgeDollarSign },
-  ];
-
-  const adminOnlyItems = [
-    { href: '/Home/approval', label: '审批管理', icon: ShieldCheck },
-  ];
-
-  const secondaryItems = [
-    { href: '/admin/settings', label: '系统设置', icon: Settings },
-  ] as const;
-
   const sidebarContent = (
     <div
       className={cn(
@@ -120,12 +120,13 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
         isCollapsed ? 'w-14' : 'w-56'
       )}
     >
+      {/* Logo / brand header */}
       <div className={cn(
         'border-b border-sidebar-border shrink-0 flex items-center',
         isCollapsed ? 'h-20 justify-center' : 'h-20 px-2.5'
       )}>
         <Link
-          href="/admin/dashboard"
+          href="/Home/dashboard"
           className={cn(
             'flex h-9 items-center rounded-xl hover:bg-sidebar-accent transition-all duration-300 overflow-hidden',
             isCollapsed ? 'justify-center' : 'gap-2.5 px-2 flex-1 min-w-0'
@@ -149,6 +150,7 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
             <span className="truncate text-[11px] text-sidebar-foreground/60 tracking-widest uppercase">Rental</span>
           </div>
         </Link>
+        {/* Mobile close button */}
         <button
           onClick={onMobileClose}
           className="flex size-9 shrink-0 items-center justify-center rounded-lg text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground lg:hidden"
@@ -158,6 +160,7 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
         </button>
       </div>
 
+      {/* Navigation */}
       <nav className="flex-1 px-2 py-2 overflow-y-auto">
         <p
           className={cn(
@@ -199,7 +202,7 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
           })}
         </ul>
 
-        {isSuperAdmin && adminOnlyItems.length > 0 && (
+        {isSuperAdmin && (
           <>
             <p
               className={cn(
@@ -284,6 +287,7 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
         </ul>
       </nav>
 
+      {/* Collapse toggle button (desktop) */}
       <div className="hidden lg:flex shrink-0 border-t border-sidebar-border p-1.5">
         <button
           onClick={() => onCollapsedChange(!isCollapsed)}
@@ -307,6 +311,7 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
         </button>
       </div>
 
+      {/* User card — pinned to bottom */}
       <div className="shrink-0 border-t border-sidebar-border p-1.5">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -341,7 +346,7 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="start" className="w-52">
             <DropdownMenuItem
-              onClick={() => router.push('/admin/settings')}
+              onClick={() => router.push('/Home/settings')}
               className="cursor-pointer"
             >
               <Settings className="mr-2 size-4" />
@@ -364,16 +369,19 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
 
   return (
     <>
+      {/* Desktop sidebar */}
       <div className="hidden lg:block shrink-0">
         {sidebarContent}
       </div>
 
+      {/* Mobile overlay + drawer */}
       <div
         className={cn(
           'lg:hidden fixed inset-0 z-40 transition-all duration-300',
           isMobileOpen ? 'visible' : 'invisible pointer-events-none'
         )}
       >
+        {/* Overlay */}
         <div
           className={cn(
             'absolute inset-0 bg-black/50 transition-opacity duration-300',
@@ -382,6 +390,7 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
           onClick={onMobileClose}
           aria-hidden="true"
         />
+        {/* Drawer */}
         <div
           className={cn(
             'absolute left-0 top-0 h-full z-50 max-w-[85vw] transition-transform duration-300',

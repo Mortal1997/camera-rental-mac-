@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { isApproved } from '@/lib/auth/admin';
+import { isAdmin, isApproved } from '@/lib/auth/admin';
 import AdminShell from './components/AdminShell';
 
 export default async function AdminLayout({
@@ -7,11 +7,16 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const admin = await isAdmin();
   const approved = await isApproved();
 
   if (!approved) {
     redirect('/login');
   }
 
-  return <AdminShell>{children}</AdminShell>;
+  return (
+    <AdminShell>
+      {children}
+    </AdminShell>
+  );
 }

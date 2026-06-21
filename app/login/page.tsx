@@ -87,7 +87,7 @@ function AuthForm({
       const result: AuthResult = await action;
       if (result.success) {
         if (mode === 'register') {
-          setSuccess('注册成功');
+          setSuccess('申请已提交，请等待管理员审核通过后登录');
         } else {
           if (rememberMe) {
             window.localStorage.setItem(REMEMBERED_EMAIL_KEY, email);

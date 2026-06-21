@@ -18,17 +18,42 @@ export async function signInWithPassword(formData: FormData): Promise<AuthResult
 
   const supabase = await createClient();
 
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data: { user }, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
 
-  if (error) {
-    if (error.message.includes('Invalid login credentials')) {
-      return { success: false, error: '邮箱或密码错误' };
-    }
-    return { success: false, error: error.message };
+  if (error || !user) {
+    return { success: false, error: '邮箱或密码错误' };
   }
 
-  revalidatePath('/', 'layout');
-  redirect('/admin');
+  const { data: adminData } = await supabase
+    .from('admin_users')
+    .select('id')
+    .eq('email', user.email)
+    .maybeSingle();
+
+  if (adminData) {
+    revalidatePath('/', 'layout');
+    redirect('/admin');
+  }
+
+  const { data: approvedData } = await supabase
+    .from('approved_users')
+    .select('id')
+    .eq('email', user.email)
+    .maybeSingle();
+
+  if (approvedData) {
+    revalidatePath('/', 'layout');
+    redirect('/admin');
+  }
+
+  await supabase.auth.signOut();
+  return {
+    success: false,
+    error: '您的账号正在等待管理员审核，请耐心等待。',
+  };
 }
 
 export async function signUp(formData: FormData): Promise<AuthResult> {
@@ -50,19 +75,43 @@ export async function signUp(formData: FormData): Promise<AuthResult> {
 
   const supabase = await createClient();
 
-  const { error } = await supabase.auth.signUp({
+  const { data: adminData } = await supabase
+    .from('admin_users')
+    .select('id')
+    .eq('email', email)
+    .maybeSingle();
+
+  if (adminData) {
+    return { success: false, error: '管理员账号无需注册，请直接登录' };
+  }
+
+  const { data: approvedData } = await supabase
+    .from('approved_users')
+    .select('id')
+    .eq('email', email)
+    .maybeSingle();
+
+  if (approvedData) {
+    return { success: false, error: '该邮箱已注册并通过审核，请直接登录' };
+  }
+
+  const { data: pendingData } = await supabase
+    .from('pending_users')
+    .select('id')
+    .eq('email', email)
+    .maybeSingle();
+
+  if (pendingData) {
+    return { success: false, error: '该邮箱已提交注册申请，请耐心等待审核' };
+  }
+
+  const { error: insertError } = await supabase.from('pending_users').insert({
     email,
-    password,
-    options: {
-      emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/admin`,
-    },
+    password_hash: password,
   });
 
-  if (error) {
-    if (error.message.includes('already registered')) {
-      return { success: false, error: '该邮箱已注册，请直接登录' };
-    }
-    return { success: false, error: error.message };
+  if (insertError) {
+    return { success: false, error: insertError.message };
   }
 
   return { success: true };
