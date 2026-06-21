@@ -7,6 +7,7 @@ import { StatBadge, cn } from '../components/ui';
 import { FlippableStatusChart } from './FlippableStatusChart';
 import { MonthlyRevenueLineChart, type MonthlyRevenuePoint } from './MonthlyRevenueLineChart';
 import { EquipmentRevenueSeriesChart } from './EquipmentRevenueSeriesChart';
+import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
 
@@ -214,67 +215,78 @@ export default async function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="pt-5">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/70 bg-sky-50 text-sky-700">
-                <Truck className="h-4 w-4" />
+        <Link href="/admin/orders/pending" className="block">
+          <Card className="transition-colors hover:border-sky-300 hover:bg-sky-50/30">
+            <CardContent className="pt-5">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/70 bg-sky-50 text-sky-700">
+                  <Truck className="h-4 w-4" />
+                </div>
+                <p className="text-[12px] font-medium text-muted-foreground">当前待发货</p>
               </div>
-              <p className="text-[12px] font-medium text-muted-foreground">当前待发货</p>
-            </div>
-            <p className="mt-4 text-[28px] font-semibold tracking-[-0.04em] text-foreground">{statusSummary.pending}</p>
-            <p className="mt-1.5 text-[12px] font-medium text-muted-foreground">含已确认 / 待付款</p>
-          </CardContent>
-        </Card>
+              <p className="mt-4 text-[28px] font-semibold tracking-[-0.04em] text-foreground">{statusSummary.pending}</p>
+              <p className="mt-1.5 text-[12px] font-medium text-muted-foreground">含已确认 / 待付款</p>
+            </CardContent>
+          </Card>
+        </Link>
 
-        <Card>
-          <CardContent className="pt-5">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/70 bg-amber-50 text-amber-700">
-                <PackageCheck className="h-4 w-4" />
+        <Link href="/admin/orders/active" className="block">
+          <Card className="transition-colors hover:border-amber-300 hover:bg-amber-50/30">
+            <CardContent className="pt-5">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/70 bg-amber-50 text-amber-700">
+                  <PackageCheck className="h-4 w-4" />
+                </div>
+                <p className="text-[12px] font-medium text-muted-foreground">当前出租中</p>
               </div>
-              <p className="text-[12px] font-medium text-muted-foreground">当前出租中</p>
-            </div>
-            <p className="mt-4 text-[28px] font-semibold tracking-[-0.04em] text-foreground">{statusSummary.using}</p>
-            <p className="mt-1.5 text-[12px] font-medium text-muted-foreground">已发货正在使用</p>
-          </CardContent>
-        </Card>
+              <p className="mt-4 text-[28px] font-semibold tracking-[-0.04em] text-foreground">{statusSummary.using}</p>
+              <p className="mt-1.5 text-[12px] font-medium text-muted-foreground">已发货正在使用</p>
+            </CardContent>
+          </Card>
+        </Link>
 
-        <Card className={statusSummary.overdue > 0 ? 'border-rose-200 bg-rose-50/50' : ''}>
-          <CardContent className="pt-5">
-            <div className="flex items-center gap-2.5">
-              <div className={cn(
-                'flex h-9 w-9 items-center justify-center rounded-xl border',
-                statusSummary.overdue > 0
-                  ? 'border-rose-200 bg-rose-100 text-rose-700'
-                  : 'border-border/70 bg-slate-100 text-slate-700',
+        <Link href="/admin/orders/active" className="block">
+          <Card className={cn(
+            'transition-colors hover:border-rose-300',
+            statusSummary.overdue > 0 ? 'border-rose-200 bg-rose-50/50 hover:bg-rose-50/70' : 'hover:bg-rose-50/30',
+          )}>
+            <CardContent className="pt-5">
+              <div className="flex items-center gap-2.5">
+                <div className={cn(
+                  'flex h-9 w-9 items-center justify-center rounded-xl border',
+                  statusSummary.overdue > 0
+                    ? 'border-rose-200 bg-rose-100 text-rose-700'
+                    : 'border-border/70 bg-slate-100 text-slate-700',
+                )}>
+                  <AlertTriangle className="h-4 w-4" />
+                </div>
+                <p className="text-[12px] font-medium text-muted-foreground">逾期未还</p>
+              </div>
+              <p className={cn(
+                'mt-4 text-[28px] font-semibold tracking-[-0.04em]',
+                statusSummary.overdue > 0 ? 'text-rose-700' : 'text-foreground',
               )}>
-                <AlertTriangle className="h-4 w-4" />
-              </div>
-              <p className="text-[12px] font-medium text-muted-foreground">逾期未还</p>
-            </div>
-            <p className={cn(
-              'mt-4 text-[28px] font-semibold tracking-[-0.04em]',
-              statusSummary.overdue > 0 ? 'text-rose-700' : 'text-foreground',
-            )}>
-              {statusSummary.overdue}
-            </p>
-            <p className="mt-1.5 text-[12px] font-medium text-muted-foreground">已过 end_date 未归还</p>
-          </CardContent>
-        </Card>
+                {statusSummary.overdue}
+              </p>
+              <p className="mt-1.5 text-[12px] font-medium text-muted-foreground">已过 end_date 未归还</p>
+            </CardContent>
+          </Card>
+        </Link>
 
-        <Card>
-          <CardContent className="pt-5">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/70 bg-slate-100 text-slate-700">
-                <Boxes className="h-4 w-4" />
+        <Link href="/admin/orders/completed" className="block">
+          <Card className="transition-colors hover:border-slate-300 hover:bg-slate-50/50">
+            <CardContent className="pt-5">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/70 bg-slate-100 text-slate-700">
+                  <Boxes className="h-4 w-4" />
+                </div>
+                <p className="text-[12px] font-medium text-muted-foreground">当前在库闲置</p>
               </div>
-              <p className="text-[12px] font-medium text-muted-foreground">当前在库闲置</p>
-            </div>
-            <p className="mt-4 text-[28px] font-semibold tracking-[-0.04em] text-foreground">{statusSummary.idle}</p>
-            <p className="mt-1.5 text-[12px] font-medium text-muted-foreground">不含维修中设备</p>
-          </CardContent>
-        </Card>
+              <p className="mt-4 text-[28px] font-semibold tracking-[-0.04em] text-foreground">{statusSummary.idle}</p>
+              <p className="mt-1.5 text-[12px] font-medium text-muted-foreground">不含维修中设备</p>
+            </CardContent>
+          </Card>
+        </Link>
       </div>
 
       <div className="grid grid-cols-1 items-stretch lg:grid-cols-2 gap-4">

@@ -437,10 +437,10 @@ export default function DispatchConsole({ orders, equipmentList, activeOrders, h
   const [refreshStatus, setRefreshStatus] = useState<'idle' | 'connecting' | 'live' | 'error'>('idle');
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
 
-  // Use rAF to set mounted after first paint — avoids hydration mismatch without useEffect
-  if (!mounted) {
-    requestAnimationFrame(() => setMounted(true));
-  }
+  // Use useEffect to set mounted after first paint — avoids hydration mismatch
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleRefreshed = React.useCallback(() => {
     setLastRefreshedAt(new Date());

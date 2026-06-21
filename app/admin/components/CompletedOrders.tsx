@@ -28,7 +28,7 @@ function formatDateRange(start?: string | null, end?: string | null) {
 }
 
 export default function CompletedOrders({ orders }: CompletedOrdersProps) {
-  const filtered = useMemo(() => orders.filter((o) => o.status === 'returned'), [orders]);
+  const filtered = useMemo(() => orders.filter((o) => o.status === 'returned' || o.status === 'cancelled'), [orders]);
   const [displayOrders, setDisplayOrders] = useState(filtered);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -54,7 +54,7 @@ export default function CompletedOrders({ orders }: CompletedOrdersProps) {
   return (
     <>
     <SurfaceCard>
-      <SectionHeader title="已完成订单" description="所有已归还并结清的订单记录。" meta={`${displayOrders.length} 单`} />
+      <SectionHeader title="已完成订单" description="已归还和已取消的订单记录。取消订单金额不计入财务报表。" meta={`${displayOrders.length} 单`} />
 
       {error ? (
         <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div>
@@ -73,6 +73,7 @@ export default function CompletedOrders({ orders }: CompletedOrdersProps) {
                 <Th className="hidden lg:table-cell">收货地址 / 物流</Th>
                 <Th className="hidden md:table-cell">租用时段</Th>
                 <Th>订单金额</Th>
+                <Th className="hidden lg:table-cell">状态</Th>
                 <Th>操作</Th>
               </tr>
             </TableHead>
@@ -110,7 +111,21 @@ export default function CompletedOrders({ orders }: CompletedOrdersProps) {
                     </div>
                   </Td>
                   <Td className="hidden md:table-cell text-slate-600">{formatDateRange(order.start_date, order.end_date)}</Td>
-                  <Td className="font-semibold text-emerald-600">{formatCurrency(order.total_price)}</Td>
+                  <Td className={order.status === 'cancelled' ? 'text-slate-400' : 'font-semibold text-emerald-600'}>
+                    {formatCurrency(order.total_price)}
+                    {order.status === 'cancelled' && (
+                      <span className="ml-2 inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                        已取消不计入
+                      </span>
+                    )}
+                  </Td>
+                  <Td className="hidden lg:table-cell">
+                    {order.status === 'cancelled' ? (
+                      <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500">已取消</span>
+                    ) : (
+                      <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700">已完成</span>
+                    )}
+                  </Td>
                   <Td>
                     <button
                       type="button"

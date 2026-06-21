@@ -39,7 +39,7 @@ export function getEffectiveEquipmentStatus(
   let hasUpcomingPending = false;
 
   for (const order of item.orders) {
-    if (!order.start_date) continue;
+    if (!order.start_date || order.status === 'cancelled') continue;
     const startKey = getStartOfDay(order.start_date).getTime();
 
     if (order.status === 'using') {

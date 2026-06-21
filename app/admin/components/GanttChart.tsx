@@ -99,6 +99,14 @@ function getStatusPill(status: string) {
       accent: 'bg-emerald-50 text-emerald-700',
     };
   }
+  if (status === 'cancelled') {
+    return {
+      label: '已取消',
+      bar: 'bg-slate-100 text-slate-500',
+      tone: 'slate' as const,
+      accent: 'bg-slate-50 text-slate-500',
+    };
+  }
   return {
     label: status,
     bar: 'bg-slate-100 text-slate-700',
@@ -243,14 +251,14 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
   const filteredEquipment = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
     return equipment.filter((item) => {
-      const matchesSearch = !term || item.name.toLowerCase().includes(term) || (item.serial_number ?? '').toLowerCase().includes(term) || item.orders.some((order) => (order.customer_name ?? '').toLowerCase().includes(term));
+      const matchesSearch = !term || item.name.toLowerCase().includes(term) || (item.serial_number ?? '').toLowerCase().includes(term) || item.orders.filter((o) => o.status !== 'cancelled').some((order) => (order.customer_name ?? '').toLowerCase().includes(term));
       const matchesCategory = categoryFilter === 'all' || item.category === categoryFilter;
       const matchesStatus = matchesMachineStatusFilter(item, machineStatusFilter, today);
       return matchesSearch && matchesCategory && matchesStatus;
     });
   }, [equipment, searchTerm, categoryFilter, machineStatusFilter, today]);
 
-  const totalOrders = useMemo(() => filteredEquipment.reduce((sum, item) => sum + item.orders.length, 0), [filteredEquipment]);
+  const totalOrders = useMemo(() => filteredEquipment.reduce((sum, item) => sum + item.orders.filter((o) => o.status !== 'cancelled').length, 0), [filteredEquipment]);
   const currentStatus = selectedOrder ? getStatusPill(selectedOrder.order.status) : null;
   const nextStatusAction = selectedOrder ? getNextStatusAction(selectedOrder.order) : null;
 
@@ -638,7 +646,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
                         const weekend = isWeekend(date);
                         const todayColumn = isSameDay(date, today);
                         const order = item.orders.find((currentOrder: Order) => {
-                          if (!currentOrder.start_date) return false;
+                          if (!currentOrder.start_date || currentOrder.status === 'cancelled') return false;
                           const startDate = getStartOfDay(currentOrder.start_date);
                           return getDateDiffInDays(days[0], startDate) === index;
                         });
