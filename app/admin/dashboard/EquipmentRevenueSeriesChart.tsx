@@ -9,6 +9,11 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLe
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { formatCurrency } from './_format';
 
+function prefersReducedMotion(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
 export type SeriesRow = {
   equipmentId: string;
   name: string;
@@ -103,6 +108,14 @@ export function EquipmentRevenueSeriesChart({
   const needsScroll = rows.length > SCROLL_THRESHOLD;
   const scrollRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState<number>(0);
+
+  // 减少动画/禁用动画的阈值：数据量超过此值时关闭动画
+  const ANIM_THRESHOLD = 60;
+  const [reducedMotion, setReducedMotion] = useState(false);
+
+  useEffect(() => {
+    setReducedMotion(prefersReducedMotion() || rows.length > ANIM_THRESHOLD);
+  }, [rows.length]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -297,7 +310,7 @@ export function EquipmentRevenueSeriesChart({
                           radius={[3, 3, 0, 0]}
                           cursor="pointer"
                           onClick={handleBarClick}
-                          isAnimationActive
+                          isAnimationActive={!reducedMotion && !needsScroll}
                           animationDuration={1000}
                           animationBegin={0}
                           animationEasing="ease-out"
@@ -309,7 +322,7 @@ export function EquipmentRevenueSeriesChart({
                           radius={[3, 3, 0, 0]}
                           cursor="pointer"
                           onClick={handleBarClick}
-                          isAnimationActive
+                          isAnimationActive={!reducedMotion && !needsScroll}
                           animationDuration={1000}
                           animationBegin={200}
                           animationEasing="ease-out"

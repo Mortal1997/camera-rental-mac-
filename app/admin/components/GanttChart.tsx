@@ -18,7 +18,8 @@ import {
   Wrench,
 } from 'lucide-react';
 import { format } from 'date-fns';
-import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { createPortal } from 'react-dom';
 import { type DateRange } from 'react-day-picker';
 import { updateOrderFields, updateOrderStatus } from '../../actions/admin-actions';
 import type { Equipment, EquipmentWithOrders, Order, Order as OrderType } from '../../actions/types';
@@ -179,12 +180,6 @@ function matchesMachineStatusFilter(
   return getEffectiveEquipmentStatus(item, today) === filter;
 }
 
-function getTooltipPlacement(index: number, span: number, totalDays: number, rowIndex: number, totalRows: number) {
-  const horizontal = index + span > totalDays - 6 ? 'right' : 'left';
-  const vertical = rowIndex >= totalRows - 2 ? 'top' : 'bottom';
-  return { horizontal, vertical };
-}
-
 function getNextStatusAction(order: Order) {
   if (order.status === 'pending_payment' || order.status === 'confirmed') {
     return { label: '标记发货', nextStatus: 'using', icon: Send, tone: 'primary' as const, requireTracking: true };
@@ -210,9 +205,11 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
   const [isDragging, setIsDragging] = useState(false);
   const [hoveredOrderId, setHoveredOrderId] = useState<string | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<SelectedOrderState | null>(null);
+  const [deferredSelectedOrder, setDeferredSelectedOrder] = useState<SelectedOrderState | null>(null);
+  const pendingOrderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editDateRange, setEditDateRange] = useState<DateRange | undefined>();
-  const [editForm, setEditForm] = useState({ customer_name: '', customer_phone: '', shipping_address: '', start_date: '', end_date: '', equipment_id: '', notes: '' });
+  const [editForm, setEditForm] = useState({ customer_name: '', customer_phone: '', shipping_address: '', start_date: '', end_date: '', equipment_id: '', notes: '', total_price: '' });
   const [sfLoading, setSfLoading] = useState(false);
   const [sfError, setSfError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -228,6 +225,11 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
   const dragStateRef = useRef({ isDown: false, startX: 0, scrollLeft: 0 });
   const [resizableWidth, setResizableWidth] = useState(DEFAULT_STICKY_COLUMN_WIDTH);
   const effectiveResizableWidth = Math.max(MIN_STICKY_COLUMN_WIDTH, Math.min(MAX_STICKY_COLUMN_WIDTH, resizableWidth));
+  const [portalTooltip, setPortalTooltip] = useState<{ mouseX: number; mouseY: number; order: Order; itemName: string; pillLabel: string; pillAccent: string; clampedSpan: number; rawSpan: number } | null>(null);
+
+  useEffect(() => () => {
+    if (pendingOrderTimerRef.current) clearTimeout(pendingOrderTimerRef.current);
+  }, []);
 
   const days = useMemo(() => Array.from({ length: PAST_DAYS + FUTURE_DAYS }, (_, index) => {
     const date = new Date(today);
@@ -402,6 +404,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
       end_date: order.end_date ?? '',
       equipment_id: selectedOrder.equipmentId,
       notes: order.notes ?? '',
+      total_price: order.total_price ?? '',
     });
     setEditDateRange(
       order.start_date && order.end_date
@@ -415,7 +418,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
 
   const cancelEdit = () => {
     setIsEditing(false);
-    setEditForm({ customer_name: '', customer_phone: '', shipping_address: '', start_date: '', end_date: '', equipment_id: '', notes: '' });
+    setEditForm({ customer_name: '', customer_phone: '', shipping_address: '', start_date: '', end_date: '', equipment_id: '', notes: '', total_price: '' });
     setEditDateRange(undefined);
   };
 
@@ -423,6 +426,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
     if (!selectedOrder) return;
     const resolvedStart = editDateRange?.from ? format(editDateRange.from, 'yyyy-MM-dd') : undefined;
     const resolvedEnd = editDateRange?.to ? format(editDateRange.to, 'yyyy-MM-dd') : undefined;
+    const totalPrice = editForm.total_price === '' ? undefined : Number(editForm.total_price);
     startTransition(async () => {
       const result = await updateOrderFields(selectedOrder.order.id, {
         customer_name: editForm.customer_name,
@@ -432,6 +436,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
         end_date: resolvedEnd,
         equipment_id: editForm.equipment_id,
         notes: editForm.notes,
+        total_price: Number.isFinite(totalPrice) && totalPrice >= 0 ? totalPrice : null,
       });
       if (!result.success) {
         setActionError(result.error ?? '保存失败');
@@ -451,6 +456,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
           end_date: resolvedEnd || undefined,
           equipment_id: editForm.equipment_id,
           notes: editForm.notes || undefined,
+          total_price: Number.isFinite(totalPrice) && totalPrice >= 0 ? totalPrice : current.order.total_price ?? null,
         },
       } : null);
       setIsEditing(false);
@@ -627,7 +633,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
                   return (
                     <tr key={item.id}>
                       <td
-                        className="sticky left-0 z-30 border-b border-r border-slate-100 bg-slate-50 pl-3 pr-2 py-2.5 shadow-[6px_0_16px_-6px_rgba(0,0,0,0.10)]"
+                        className="sticky left-0 z-50 border-b border-r border-slate-100 bg-slate-50 pl-3 pr-2 py-2.5 shadow-[6px_0_16px_-6px_rgba(0,0,0,0.10)]"
                         style={{ width: effectiveResizableWidth, minWidth: MIN_STICKY_COLUMN_WIDTH, maxWidth: MAX_STICKY_COLUMN_WIDTH }}
                       >
                         <div className="flex min-w-0 items-center gap-2">
@@ -665,28 +671,48 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
                         const rawSpan = getDateDiffInDays(startDate, endDate) + 1;
                         const clampedSpan = Math.min(rawSpan, days.length - index);
                         const isHovered = hoveredOrderId === order.id;
-                        const tooltipPlacement = getTooltipPlacement(index, clampedSpan, days.length, rowIndex, filteredEquipment.length);
 
                         return (
                           <td key={`${item.id}-${dateKey}`} className={cn('relative h-16 border-b border-slate-100 p-0', getColumnTone({ holiday, weekend, todayColumn }))} style={{ width: DAY_COLUMN_WIDTH }}>
                             {todayColumn ? <span className="pointer-events-none absolute inset-y-0 left-0 z-0 w-px bg-indigo-300" /> : null}
                             <div
-                              className={cn('absolute inset-y-2 left-0 z-20 overflow-visible transition-all duration-150', isHovered && 'z-40 scale-[1.01]')}
+                              className={cn('absolute inset-y-2 left-0 overflow-visible transition-all duration-150', isHovered && 'z-40', 'z-10')}
                               style={{ width: `calc(${DAY_COLUMN_WIDTH}px * ${clampedSpan})` }}
-                              onMouseEnter={() => setHoveredOrderId(order.id)}
-                              onMouseLeave={() => setHoveredOrderId((current) => (current === order.id ? null : current))}
+                              onMouseEnter={(event) => {
+                                setHoveredOrderId(order.id);
+                                setPortalTooltip({
+                                  mouseX: event.clientX,
+                                  mouseY: event.clientY,
+                                  order,
+                                  itemName: item.name,
+                                  pillLabel: pill.label,
+                                  pillAccent: pill.accent,
+                                  clampedSpan,
+                                  rawSpan,
+                                });
+                              }}
+                              onMouseLeave={() => {
+                                setHoveredOrderId((current) => (current === order.id ? null : current));
+                                setPortalTooltip(null);
+                              }}
                             >
                               <button
                                 type="button"
                                 onClick={() => {
+                                  if (pendingOrderTimerRef.current) clearTimeout(pendingOrderTimerRef.current);
                                   setActionError(null);
                                   setCopyMessage(null);
                                   setConfirmShip(false);
                                   setTrackingNumberInput(order.tracking_number || '');
                                   setShipMethod('express');
-                                  setSelectedOrder({ order, equipmentId: item.id, equipmentName: item.name, category: item.category });
+                                  const orderData = { order, equipmentId: item.id, equipmentName: item.name, category: item.category };
+                                  setDeferredSelectedOrder(orderData);
+                                  pendingOrderTimerRef.current = setTimeout(() => {
+                                    pendingOrderTimerRef.current = null;
+                                    setSelectedOrder(orderData);
+                                  }, 0);
                                 }}
-                                className="block h-full w-full text-left outline-none"
+                                className={cn('block h-full w-full text-left outline-none transition-transform duration-150', isHovered && 'scale-[1.01]')}
                               >
                                 <div className={cn('flex h-full items-center justify-between gap-2 overflow-hidden rounded-xl px-2.5 py-1.5 shadow-sm transition-all duration-150', pill.bar, isHovered && 'ring-2 ring-indigo-100')}>
                                   <div className="min-w-0">
@@ -699,22 +725,6 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
                                   {clampedSpan >= 2 ? <span className="shrink-0 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-medium text-slate-500">{rawSpan} 天</span> : null}
                                 </div>
                               </button>
-
-                              {isHovered ? (
-                                <div className={cn('absolute z-30 w-56 rounded-2xl bg-white p-4 text-left shadow-lg sm:w-64', tooltipPlacement.horizontal === 'right' ? 'right-0' : 'left-0', tooltipPlacement.vertical === 'top' ? 'bottom-full mb-2' : 'top-full mt-2')}>
-                                  <div className="flex items-center justify-between gap-3">
-                                    <p className="text-sm font-semibold text-slate-900">{order.customer_name ?? '未命名客户'}</p>
-                                    <span className={cn('rounded-full px-2.5 py-1 text-[10px] font-semibold', pill.accent)}>{pill.label}</span>
-                                  </div>
-                                  <div className="mt-3 space-y-2 text-xs text-slate-700">
-                                    <div className="flex items-start justify-between gap-3"><span className="text-slate-400">设备</span><span className="text-right font-medium">{item.name}</span></div>
-                                    <div className="flex items-start justify-between gap-3"><span className="text-slate-400">时间</span><span className="text-right font-medium">{order.start_date} ~ {order.end_date}</span></div>
-                                    <div className="flex items-start justify-between gap-3"><span className="text-slate-400">电话</span><span className="font-medium">{order.customer_phone || '—'}</span></div>
-                                    {order.notes ? <div className="rounded-lg bg-amber-50 px-2.5 py-2 text-amber-700"><span className="font-medium">📝 </span>{order.notes}</div> : null}
-                                    <p className="pt-2 text-[11px] text-slate-400">点击色块可查看完整订单详情</p>
-                                  </div>
-                                </div>
-                              ) : null}
                             </div>
                           </td>
                         );
@@ -729,12 +739,41 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
         </div>
       </SurfaceCard>
 
+      {portalTooltip ? createPortal(
+        <div
+          className="pointer-events-none fixed z-[70]"
+          style={{
+            top: portalTooltip.mouseY - 4,
+            left: portalTooltip.mouseX + 12,
+            animation: 'tooltipFadeIn 180ms cubic-bezier(0.16, 1, 0.3, 1) forwards',
+          }}
+        >
+          <style>{`@keyframes tooltipFadeIn { from { opacity: 0; transform: scale(0.92) translateY(4px); } to { opacity: 1; transform: scale(1) translateY(0); } }`}</style>
+          <div className="w-60 rounded-2xl border border-slate-200/80 bg-white/95 p-4 text-left shadow-xl backdrop-blur-sm sm:w-64">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-slate-900">{portalTooltip.order.customer_name ?? '未命名客户'}</p>
+              <span className={cn('rounded-full px-2.5 py-1 text-[10px] font-semibold', portalTooltip.pillAccent)}>{portalTooltip.pillLabel}</span>
+            </div>
+            <div className="mt-3 space-y-2 text-xs text-slate-700">
+              <div className="flex items-start justify-between gap-3"><span className="text-slate-400">设备</span><span className="text-right font-medium">{portalTooltip.itemName}</span></div>
+              <div className="flex items-start justify-between gap-3"><span className="text-slate-400">时间</span><span className="text-right font-medium">{portalTooltip.order.start_date} ~ {portalTooltip.order.end_date}</span></div>
+              <div className="flex items-start justify-between gap-3"><span className="text-slate-400">电话</span><span className="font-medium">{portalTooltip.order.customer_phone || '—'}</span></div>
+              {portalTooltip.order.notes ? <div className="rounded-lg bg-amber-50 px-2.5 py-2 text-amber-700"><span className="font-medium">📝 </span>{portalTooltip.order.notes}</div> : null}
+              <p className="pt-2 text-[11px] text-slate-400">点击色块可查看完整订单详情</p>
+            </div>
+          </div>
+        </div>,
+        document.body
+      ) : null}
+
       <Modal
         open={Boolean(selectedOrder)}
         onClose={() => {
+          if (pendingOrderTimerRef.current) { clearTimeout(pendingOrderTimerRef.current); pendingOrderTimerRef.current = null; }
+          setDeferredSelectedOrder(null);
           setSelectedOrder(null);
           setIsEditing(false);
-          setEditForm({ customer_name: '', customer_phone: '', shipping_address: '', start_date: '', end_date: '', equipment_id: '', notes: '' });
+          setEditForm({ customer_name: '', customer_phone: '', shipping_address: '', start_date: '', end_date: '', equipment_id: '', notes: '', total_price: '' });
           setEditDateRange(undefined);
           setActionError(null);
           setCopyMessage(null);
@@ -771,7 +810,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
                       {nextStatusAction.label}
                     </SecondaryButton>
                   ) : null}
-                  <SecondaryButton onClick={() => { setSelectedOrder(null); setActionError(null); setCopyMessage(null); setTrackingNumberInput(''); setConfirmShip(false); }}>关闭</SecondaryButton>
+                  <SecondaryButton onClick={() => { if (pendingOrderTimerRef.current) { clearTimeout(pendingOrderTimerRef.current); pendingOrderTimerRef.current = null; } setDeferredSelectedOrder(null); setSelectedOrder(null); setActionError(null); setCopyMessage(null); setTrackingNumberInput(''); setConfirmShip(false); }}>关闭</SecondaryButton>
                 </>
               ) : (
                 <>
@@ -945,6 +984,18 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
                       date={editDateRange}
                       onDateChange={setEditDateRange}
                       placeholder="请选择租赁期限..."
+                    />
+                  </div>
+                  <div className="md:col-span-2 space-y-1.5">
+                    <label className="text-[12px] font-medium text-slate-500">订单金额 (元)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={editForm.total_price}
+                      onChange={(e) => setEditForm((f) => ({ ...f, total_price: e.target.value }))}
+                      placeholder="请输入订单金额"
+                      className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-[14px] text-foreground shadow-sm transition-all outline-none focus:border-foreground/30 focus:ring-2 focus:ring-foreground/10"
                     />
                   </div>
                   <div className="md:col-span-2 space-y-1.5">

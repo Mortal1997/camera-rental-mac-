@@ -580,13 +580,21 @@ export async function updateOrderFields(
     start_date?: string;
     end_date?: string;
     notes?: string;
+    total_price?: number | null;
   }
 ): Promise<{ success: boolean; error?: string }> {
   await requireAuth();
+
+  const normalizedFields: Record<string, unknown> = { ...fields };
+  if (normalizedFields.total_price !== undefined) {
+    const raw = Number(normalizedFields.total_price);
+    normalizedFields.total_price = Number.isFinite(raw) && raw >= 0 ? raw : null;
+  }
+
   const supabaseAdmin = await createServiceClient();
   const { error } = await supabaseAdmin
     .from('orders')
-    .update(fields)
+    .update(normalizedFields)
     .eq('id', orderId);
 
   if (error) {

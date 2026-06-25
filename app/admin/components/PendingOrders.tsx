@@ -272,6 +272,7 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
     start_date: '',
     end_date: '',
     notes: '',
+    total_price: '',
   });
   const [editFormError, setEditFormError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -402,6 +403,7 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
       start_date: order.start_date ?? '',
       end_date: order.end_date ?? '',
       notes: order.notes ?? '',
+      total_price: order.total_price != null ? String(order.total_price) : '',
     });
     setEditDateRange(
       order.start_date && order.end_date
@@ -444,6 +446,9 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
 
     setEditFormError(null);
     startTransition(async () => {
+      const totalPriceRaw = editFormValues.total_price.trim();
+      const totalPrice = totalPriceRaw ? Number(totalPriceRaw) : undefined;
+
       const result = await updateOrderFields(orderId, {
         customer_name: editFormValues.customer_name.trim() || undefined,
         customer_phone: editFormValues.customer_phone.trim() || undefined,
@@ -452,6 +457,7 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
         start_date: resolvedStart,
         end_date: resolvedEnd,
         notes: editFormValues.notes.trim() || undefined,
+        total_price: Number.isFinite(totalPrice) && totalPrice >= 0 ? totalPrice : undefined,
       });
 
       if (!result.success) {
@@ -472,6 +478,7 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
                 start_date: resolvedStart || order.start_date,
                 end_date: resolvedEnd || order.end_date,
                 notes: editFormValues.notes.trim() || order.notes,
+                total_price: Number.isFinite(totalPrice) && totalPrice >= 0 ? totalPrice : order.total_price,
               }
             : order
         )
@@ -904,7 +911,7 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
             >
               {equipmentList.map((equipment) => (
                 <option key={equipment.id} value={equipment.id}>
-                  {equipment.name}
+                  {equipment.name}{equipment.serial_number ? ` · ${equipment.serial_number}` : ''}
                 </option>
               ))}
             </SelectInput>
@@ -1155,6 +1162,17 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
                 date={editDateRange}
                 onDateChange={setEditDateRange}
                 placeholder="请选择租赁期限..."
+              />
+            </FormField>
+            <FormField label="订单金额 (元)">
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={editFormValues.total_price}
+                onChange={(e) => setEditFormValues((p) => ({ ...p, total_price: e.target.value }))}
+                placeholder="请输入订单金额"
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 shadow-sm transition-all outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
               />
             </FormField>
             <FormField label="订单备注">

@@ -7,6 +7,11 @@ import { EmptyState, cn } from '../components/ui';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
 import { Pie, PieChart, Cell } from 'recharts';
 
+function prefersReducedMotion(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
 type Slice = {
   key: 'idle' | 'pending' | 'using' | 'overdue' | 'maintenance';
   label: string;
@@ -46,6 +51,12 @@ export type FlippableStatusChartProps = {
 
 export function FlippableStatusChart({ total, counts }: FlippableStatusChartProps) {
   const [flipped, setFlipped] = useState(false);
+  const [reducedMotion, setReducedMotion] = useState(prefersReducedMotion);
+
+  if (typeof window !== 'undefined') {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    if (!reducedMotion && mq.matches) setReducedMotion(true);
+  }
 
   const slices: Slice[] = SLICES.map((s) => ({ ...s, count: counts[s.key] }));
   const pieData = slices.filter((s) => s.count > 0);
@@ -126,7 +137,7 @@ export function FlippableStatusChart({ total, counts }: FlippableStatusChartProp
                       paddingAngle={2}
                       strokeWidth={2}
                       stroke="#fff"
-                      isAnimationActive
+                      isAnimationActive={!reducedMotion}
                       animationDuration={1200}
                       animationBegin={0}
                       animationEasing="ease-out"

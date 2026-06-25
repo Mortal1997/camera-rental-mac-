@@ -261,7 +261,7 @@ async function upsertOrderAtomic(
   // 1) 先查现有行 + 现有 modify_time（按 user_id + 平台 + 订单号定位）
   const { data: existing, error: selectError } = await supabaseAdmin
     .from('orders')
-    .select('id, metadata, customer_name, customer_phone, shipping_address, total_price, expected_equipment_model')
+    .select('id, metadata, customer_name, customer_phone, shipping_address, total_price, expected_equipment_model, start_date, end_date')
     .eq('user_id', row.user_id)
     .eq('platform_source', row.platform_source)
     .eq('external_order_id', row.external_order_id)
@@ -286,6 +286,8 @@ async function upsertOrderAtomic(
     shipping_address: string;
     total_price: number;
     expected_equipment_model: string;
+    start_date: string | null;
+    end_date: string | null;
   };
   const existingModifyTime =
     typeof existingRow.metadata?.modify_time === 'number'
@@ -299,6 +301,7 @@ async function upsertOrderAtomic(
 
   // 新事件或同 modify_time：保留已有的真实客户数据，只更新状态和元数据
   // 防止 webhook 的不完整数据（姓名=user_name，电话/地址/金额=占位符）覆盖 sync-orders 拉取的真实数据
+  // 同时保留已设置的租期 start_date/end_date，避免 webhook 把它们重置为下单日期
   const mergedRow: OrderRow = {
     ...row,
     customer_name: isRealCustomerName(existingRow.customer_name) ? existingRow.customer_name : row.customer_name,
@@ -306,6 +309,8 @@ async function upsertOrderAtomic(
     shipping_address: isRealShippingAddress(existingRow.shipping_address) ? existingRow.shipping_address : row.shipping_address,
     total_price: existingRow.total_price > 0 ? existingRow.total_price : row.total_price,
     expected_equipment_model: isRealEquipmentModel(existingRow.expected_equipment_model) ? existingRow.expected_equipment_model : row.expected_equipment_model,
+    start_date: existingRow.start_date ?? row.start_date,
+    end_date: existingRow.end_date ?? row.end_date,
   };
 
   const { error: updateError } = await supabaseAdmin

@@ -1,12 +1,17 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '../components/ui';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts';
 import { formatCurrency } from './_format';
+
+function prefersReducedMotion(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
 
 export type MonthlyRevenuePoint = {
   /** 1..12 月份编号（按自然年） */
@@ -37,6 +42,13 @@ function formatShortCurrency(value: number) {
 }
 
 export function MonthlyRevenueLineChart({ year, currentMonth, points }: MonthlyRevenueLineChartProps) {
+  const [reducedMotion, setReducedMotion] = useState(prefersReducedMotion());
+
+  if (typeof window !== 'undefined') {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    if (!reducedMotion && mq.matches) setReducedMotion(true);
+  }
+
   // 只画到当前月（currentMonth，1-12）；未到的月份不画
   const endMonth = Math.min(Math.max(currentMonth, 1), 12);
 
@@ -181,7 +193,7 @@ export function MonthlyRevenueLineChart({ year, currentMonth, points }: MonthlyR
                   strokeWidth={2.5}
                   dot={{ r: 4, fill: '#10b981', strokeWidth: 2, stroke: '#fff' }}
                   activeDot={{ r: 6, strokeWidth: 2, stroke: '#fff' }}
-                  isAnimationActive
+                  isAnimationActive={!reducedMotion}
                   animationDuration={1200}
                   animationBegin={0}
                   animationEasing="ease-out"
