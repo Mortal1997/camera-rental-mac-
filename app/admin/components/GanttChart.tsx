@@ -404,7 +404,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
       end_date: order.end_date ?? '',
       equipment_id: selectedOrder.equipmentId,
       notes: order.notes ?? '',
-      total_price: order.total_price ?? '',
+      total_price: order.total_price != null ? String(order.total_price) : '',
     });
     setEditDateRange(
       order.start_date && order.end_date
@@ -436,7 +436,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
         end_date: resolvedEnd,
         equipment_id: editForm.equipment_id,
         notes: editForm.notes,
-        total_price: Number.isFinite(totalPrice) && totalPrice >= 0 ? totalPrice : null,
+        total_price: totalPrice !== undefined && Number.isFinite(totalPrice) && totalPrice >= 0 ? totalPrice : null,
       });
       if (!result.success) {
         setActionError(result.error ?? '保存失败');
@@ -456,7 +456,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
           end_date: resolvedEnd || undefined,
           equipment_id: editForm.equipment_id,
           notes: editForm.notes || undefined,
-          total_price: Number.isFinite(totalPrice) && totalPrice >= 0 ? totalPrice : current.order.total_price ?? null,
+          total_price: totalPrice !== undefined && Number.isFinite(totalPrice) && totalPrice >= 0 ? totalPrice : current.order.total_price ?? null,
         },
       } : null);
       setIsEditing(false);

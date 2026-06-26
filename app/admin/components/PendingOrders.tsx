@@ -457,7 +457,7 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
         start_date: resolvedStart,
         end_date: resolvedEnd,
         notes: editFormValues.notes.trim() || undefined,
-        total_price: Number.isFinite(totalPrice) && totalPrice >= 0 ? totalPrice : undefined,
+        total_price: totalPrice !== undefined && Number.isFinite(totalPrice) && totalPrice >= 0 ? totalPrice : undefined,
       });
 
       if (!result.success) {
@@ -478,7 +478,7 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
                 start_date: resolvedStart || order.start_date,
                 end_date: resolvedEnd || order.end_date,
                 notes: editFormValues.notes.trim() || order.notes,
-                total_price: Number.isFinite(totalPrice) && totalPrice >= 0 ? totalPrice : order.total_price,
+                total_price: totalPrice !== undefined && Number.isFinite(totalPrice) && totalPrice >= 0 ? totalPrice : order.total_price,
               }
             : order
         )

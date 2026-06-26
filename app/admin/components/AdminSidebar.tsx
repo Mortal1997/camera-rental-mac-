@@ -116,12 +116,12 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
   const sidebarContent = (
     <div
       className={cn(
-        'flex h-full shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-all duration-300',
+        'flex h-full shrink-0 flex-col bg-sidebar transition-all duration-300',
         isCollapsed ? 'w-14' : 'w-56'
       )}
     >
       <div className={cn(
-        'border-b border-sidebar-border shrink-0 flex items-center',
+        'shrink-0 flex items-center',
         isCollapsed ? 'h-20 justify-center' : 'h-20 px-2.5'
       )}>
         <Link
@@ -284,7 +284,7 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
         </ul>
       </nav>
 
-      <div className="hidden lg:flex shrink-0 border-t border-sidebar-border p-1.5">
+      <div className="hidden lg:flex shrink-0 p-1.5">
         <button
           onClick={() => onCollapsedChange(!isCollapsed)}
           className="flex w-full h-9 items-center justify-center gap-2 rounded-lg px-2 text-[13px] text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all"
@@ -307,7 +307,7 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
         </button>
       </div>
 
-      <div className="shrink-0 border-t border-sidebar-border p-1.5">
+      <div className="shrink-0 p-1.5">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
