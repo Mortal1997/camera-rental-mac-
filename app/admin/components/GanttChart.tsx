@@ -225,7 +225,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
   const dragStateRef = useRef({ isDown: false, startX: 0, scrollLeft: 0 });
   const [resizableWidth, setResizableWidth] = useState(DEFAULT_STICKY_COLUMN_WIDTH);
   const effectiveResizableWidth = Math.max(MIN_STICKY_COLUMN_WIDTH, Math.min(MAX_STICKY_COLUMN_WIDTH, resizableWidth));
-  const [portalTooltip, setPortalTooltip] = useState<{ mouseX: number; mouseY: number; order: Order; itemName: string; pillLabel: string; pillAccent: string; clampedSpan: number; rawSpan: number } | null>(null);
+  const [portalTooltip, setPortalTooltip] = useState<{ mouseX: number; mouseY: number; order: Order; itemName: string; pillLabel: string; pillAccent: string; clampedSpan: number; renderSpan?: number; rawSpan: number } | null>(null);
 
   useEffect(() => () => {
     if (pendingOrderTimerRef.current) clearTimeout(pendingOrderTimerRef.current);
@@ -652,9 +652,12 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
                         const weekend = isWeekend(date);
                         const todayColumn = isSameDay(date, today);
                         const order = item.orders.find((currentOrder: Order) => {
-                          if (!currentOrder.start_date || currentOrder.status === 'cancelled') return false;
-                          const startDate = getStartOfDay(currentOrder.start_date);
-                          return getDateDiffInDays(days[0], startDate) === index;
+                          if (currentOrder.status === 'cancelled') return false;
+                          const startDate = currentOrder.start_date ? getStartOfDay(currentOrder.start_date) : null;
+                          const endDate = currentOrder.end_date ? getStartOfDay(currentOrder.end_date) : startDate;
+                          if (!endDate) return false;
+                          const endIndex = getDateDiffInDays(days[0], endDate);
+                          return endIndex === index;
                         });
 
                         if (!order) {
@@ -669,15 +672,17 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
                         const startDate = getStartOfDay(order.start_date ?? order.end_date ?? date);
                         const endDate = getStartOfDay(order.end_date ?? order.start_date ?? date);
                         const rawSpan = getDateDiffInDays(startDate, endDate) + 1;
-                        const clampedSpan = Math.min(rawSpan, days.length - index);
+                        const startIndex = getDateDiffInDays(days[0], startDate);
+                        const clampedStart = Math.max(0, startIndex);
+                        const renderSpan = Math.max(1, rawSpan - Math.max(0, -startIndex));
                         const isHovered = hoveredOrderId === order.id;
 
                         return (
                           <td key={`${item.id}-${dateKey}`} className={cn('relative h-16 border-b border-slate-100 p-0', getColumnTone({ holiday, weekend, todayColumn }))} style={{ width: DAY_COLUMN_WIDTH }}>
                             {todayColumn ? <span className="pointer-events-none absolute inset-y-0 left-0 z-0 w-px bg-indigo-300" /> : null}
                             <div
-                              className={cn('absolute inset-y-2 left-0 overflow-visible transition-all duration-150', isHovered && 'z-40', 'z-10')}
-                              style={{ width: `calc(${DAY_COLUMN_WIDTH}px * ${clampedSpan})` }}
+                              className={cn('absolute inset-y-2 right-0 overflow-visible transition-all duration-150', isHovered && 'z-40', 'z-10')}
+                              style={{ width: `calc(${DAY_COLUMN_WIDTH}px * ${renderSpan})` }}
                               onMouseEnter={(event) => {
                                 setHoveredOrderId(order.id);
                                 setPortalTooltip({
@@ -687,7 +692,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
                                   itemName: item.name,
                                   pillLabel: pill.label,
                                   pillAccent: pill.accent,
-                                  clampedSpan,
+                                  clampedSpan: renderSpan,
                                   rawSpan,
                                 });
                               }}
@@ -722,7 +727,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
                                     </div>
                                     <p className="truncate text-[10px] text-slate-500">{pill.label}</p>
                                   </div>
-                                  {clampedSpan >= 2 ? <span className="shrink-0 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-medium text-slate-500">{rawSpan} 天</span> : null}
+                                  {renderSpan >= 2 ? <span className="shrink-0 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-medium text-slate-500">{rawSpan} 天</span> : null}
                                 </div>
                               </button>
                             </div>
