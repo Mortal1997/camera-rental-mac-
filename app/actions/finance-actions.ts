@@ -24,6 +24,13 @@ export type FinancialReport = {
   monthlySummary: FinancialMonthlySummary[];
   orders: OrderWithEquipment[];
   expenses: ExpenseItem[];
+  equipmentDailyRentTrend: EquipmentMonthlyRentPoint[];
+};
+
+export type EquipmentMonthlyRentPoint = {
+  month: string;
+  category: string;
+  avgDailyRent: number;
 };
 
 function getDefaultRange() {
@@ -114,6 +121,47 @@ export async function getFinancialReport(
 
   const monthlySummary = Array.from(monthlyMap.values()).sort((a, b) => b.month.localeCompare(a.month));
 
+  // 按分类计算每月的日租金均值：日租金 = 该分类所有机器总租金 / 该分类所有机器租出总天数
+  const categoryRentMap = new Map<string, { totalRent: number; totalDays: number }>();
+
+  for (const order of orders) {
+    const category = order.equipment?.category ?? '未分类';
+    if (!order.equipment) continue;
+
+    const startDate = order.start_date ? new Date(order.start_date) : null;
+    const endDate = order.end_date ? new Date(order.end_date) : null;
+
+    if (!startDate || !endDate) continue;
+
+    const days = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    if (days <= 0) continue;
+
+    const totalPrice = Number(order.total_price || 0);
+
+    const month = formatMonthKey(order.start_date ?? order.end_date ?? new Date().toISOString().slice(0, 10));
+    const key = `${category}|${month}`;
+
+    const existing = categoryRentMap.get(key) ?? { totalRent: 0, totalDays: 0 };
+    existing.totalRent += totalPrice;
+    existing.totalDays += days;
+    categoryRentMap.set(key, existing);
+  }
+
+  const equipmentDailyRentTrend: EquipmentMonthlyRentPoint[] = Array.from(categoryRentMap.entries())
+    .map(([key, value]) => {
+      const [category, month] = key.split('|');
+      return {
+        month,
+        category,
+        avgDailyRent: value.totalDays > 0 ? value.totalRent / value.totalDays : 0,
+      };
+    })
+    .sort((a, b) => {
+      const monthCompare = a.month.localeCompare(b.month);
+      if (monthCompare !== 0) return monthCompare;
+      return a.category.localeCompare(b.category);
+    });
+
   const returnedOrders = orders.filter((order) => order.status === 'returned');
 
   return {
@@ -126,5 +174,6 @@ export async function getFinancialReport(
     monthlySummary,
     orders: returnedOrders,
     expenses,
+    equipmentDailyRentTrend,
   };
 }

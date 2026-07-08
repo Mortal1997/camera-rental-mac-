@@ -1,12 +1,13 @@
 'use client';
 
 import { useRef, useState, useTransition } from 'react';
-import { bulkCreateEquipment, createEquipment, deleteEquipment, updateEquipmentStatus } from '../../actions/admin-actions';
+import { bulkCreateEquipment, createEquipment, deleteEquipment, updateEquipment, updateEquipmentStatus } from '../../actions/admin-actions';
 import type { Equipment } from '../../actions/types';
 import { read, utils, writeFileXLSX } from 'xlsx';
-import { Boxes, Download, FileSpreadsheet, Plus, Trash2, Upload, Wrench } from 'lucide-react';
+import { Boxes, Download, FileSpreadsheet, Pencil, Plus, Trash2, Upload, Wrench } from 'lucide-react';
 import { DangerButton, EmptyState, FormField, Modal, PrimaryButton, SecondaryButton, SectionHeader, StatBadge, SurfaceCard, TableHead, TableShell, Td, TextInput, Th, Tr } from './ui';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { CategoryCombobox } from './CategoryCombobox';
 
 interface InventoryManagerProps {
   equipment: Equipment[];
@@ -134,7 +135,13 @@ export default function InventoryManager({ equipment }: InventoryManagerProps) {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [deleteDialogEquipment, setDeleteDialogEquipment] = useState<Equipment | null>(null);
+  const [editingEquipment, setEditingEquipment] = useState<Equipment | null>(null);
+  const [editFormValues, setEditFormValues] = useState(initialForm);
+  const [editFormErrors, setEditFormErrors] = useState<FormErrors>({});
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // 获取所有已存在的分类
+  const existingCategories = [...new Set(equipment.map((eq) => eq.category).filter(Boolean) as string[])];
 
   const validPreviewRecords = previewRecords.filter((record) => record.issues.length === 0);
   const invalidPreviewRecords = previewRecords.filter((record) => record.issues.length > 0);
@@ -233,6 +240,74 @@ export default function InventoryManager({ equipment }: InventoryManagerProps) {
       }
       setSuccessMsg(`「${eq.name}」已删除`);
       setTimeout(() => setSuccessMsg(null), 3000);
+    });
+  };
+
+  const openEditModal = (eq: Equipment) => {
+    setEditingEquipment(eq);
+    setEditFormValues({
+      name: eq.name,
+      category: eq.category ?? '',
+      serial_number: eq.serial_number ?? '',
+      daily_fee: String(eq.daily_fee),
+      deposit: String(eq.deposit),
+      warranty_expire_date: eq.warranty_expire_date ?? '',
+    });
+    setEditFormErrors({});
+  };
+
+  const closeEditModal = () => {
+    setEditingEquipment(null);
+    setEditFormErrors({});
+    setEditFormValues(initialForm);
+  };
+
+  const validateEditForm = (): boolean => {
+    const errors: FormErrors = {};
+    if (!editFormValues.name.trim()) errors.name = '请输入设备名称';
+    if (!editFormValues.daily_fee.trim()) {
+      errors.daily_fee = '请输入日租金';
+    } else if (Number(editFormValues.daily_fee) < 0) {
+      errors.daily_fee = '日租金不能为负数';
+    }
+    if (!editFormValues.deposit.trim()) {
+      errors.deposit = '请输入押金';
+    } else if (Number(editFormValues.deposit) < 0) {
+      errors.deposit = '押金不能为负数';
+    }
+    if (editFormValues.warranty_expire_date) {
+      const today = new Date().toISOString().slice(0, 10);
+      if (editFormValues.warranty_expire_date < today) {
+        errors.warranty_expire_date = '质保到期日不能早于今天';
+      }
+    }
+    setEditFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleUpdate = () => {
+    if (!editingEquipment) return;
+    setServerError(null);
+    if (!validateEditForm()) return;
+
+    startTransition(async () => {
+      const result = await updateEquipment(editingEquipment.id, {
+        name: editFormValues.name.trim(),
+        category: editFormValues.category.trim() || null,
+        serial_number: editFormValues.serial_number.trim() || null,
+        daily_fee: Number(editFormValues.daily_fee),
+        deposit: Number(editFormValues.deposit),
+        warranty_expire_date: editFormValues.warranty_expire_date.trim() || null,
+      });
+
+      if (!result.success) {
+        setServerError(result.error ?? '更新失败');
+        return;
+      }
+
+      setSuccessMsg(`「${editingEquipment.name}」已更新`);
+      setTimeout(() => setSuccessMsg(null), 3000);
+      closeEditModal();
     });
   };
 
@@ -363,6 +438,9 @@ export default function InventoryManager({ equipment }: InventoryManagerProps) {
                         <Td className="hidden lg:table-cell">{eq.warranty_expire_date || '—'}</Td>
                         <Td>
                           <div className="flex items-center gap-2">
+                            <SecondaryButton onClick={() => openEditModal(eq)} className="text-xs !py-1.5">
+                              <Pencil className="h-3 w-3" />编辑
+                            </SecondaryButton>
                             <SecondaryButton onClick={() => handleToggleStatus(eq)} disabled={isPending} className="text-xs !py-1.5">
                               <Wrench className="h-3 w-3" />{eq.status === 'available' ? '报修' : '恢复'}
                             </SecondaryButton>
@@ -408,11 +486,11 @@ export default function InventoryManager({ equipment }: InventoryManagerProps) {
           </FormField>
 
           <FormField label="型号 / 分类" error={formErrors.category}>
-            <TextInput
-              type="text"
-              placeholder="如：全画幅微单"
+            <CategoryCombobox
               value={formValues.category}
-              onChange={(e) => setFormValues((p) => ({ ...p, category: e.target.value }))}
+              onChange={(value) => setFormValues((p) => ({ ...p, category: value }))}
+              categories={existingCategories}
+              placeholder="选择或输入型号分类..."
             />
           </FormField>
 
@@ -536,6 +614,82 @@ export default function InventoryManager({ equipment }: InventoryManagerProps) {
             </tbody>
           </table>
         </TableShell>
+      </Modal>
+
+      <Modal
+        open={editingEquipment !== null}
+        onClose={closeEditModal}
+        eyebrow="Inventory"
+        icon={Boxes}
+        title="编辑设备"
+        footer={
+          <div className="flex flex-wrap justify-end gap-3">
+            {serverError && (
+              <div className="w-full rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-600">{serverError}</div>
+            )}
+            <SecondaryButton onClick={closeEditModal} disabled={isPending}>取消</SecondaryButton>
+            <PrimaryButton onClick={handleUpdate} disabled={isPending}>{isPending ? '保存中...' : '保存修改'}</PrimaryButton>
+          </div>
+        }
+      >
+        <div className="grid gap-5 md:grid-cols-2">
+          <FormField label="设备名称" error={editFormErrors.name}>
+            <TextInput
+              type="text"
+              placeholder="如：Canon EOS R5"
+              value={editFormValues.name}
+              onChange={(e) => setEditFormValues((p) => ({ ...p, name: e.target.value }))}
+            />
+          </FormField>
+
+          <FormField label="型号 / 分类" error={editFormErrors.category}>
+            <CategoryCombobox
+              value={editFormValues.category}
+              onChange={(value) => setEditFormValues((p) => ({ ...p, category: value }))}
+              categories={existingCategories}
+              placeholder="选择或输入型号分类..."
+            />
+          </FormField>
+
+          <FormField label="SN号" error={editFormErrors.serial_number}>
+            <TextInput
+              type="text"
+              placeholder="机身序列号"
+              value={editFormValues.serial_number}
+              onChange={(e) => setEditFormValues((p) => ({ ...p, serial_number: e.target.value }))}
+            />
+          </FormField>
+
+          <FormField label="日租金 (元)" error={editFormErrors.daily_fee}>
+            <TextInput
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="0.00"
+              value={editFormValues.daily_fee}
+              onChange={(e) => setEditFormValues((p) => ({ ...p, daily_fee: e.target.value }))}
+            />
+          </FormField>
+
+          <FormField label="押金 (元)" error={editFormErrors.deposit}>
+            <TextInput
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="0.00"
+              value={editFormValues.deposit}
+              onChange={(e) => setEditFormValues((p) => ({ ...p, deposit: e.target.value }))}
+            />
+          </FormField>
+
+          <FormField label="质保到期日" error={editFormErrors.warranty_expire_date}>
+            <TextInput
+              type="date"
+              value={editFormValues.warranty_expire_date}
+              onChange={(e) => setEditFormValues((p) => ({ ...p, warranty_expire_date: e.target.value }))}
+            />
+          </FormField>
+        </div>
       </Modal>
 
       <Dialog open={deleteDialogEquipment !== null} onOpenChange={(open) => !open && setDeleteDialogEquipment(null)}>

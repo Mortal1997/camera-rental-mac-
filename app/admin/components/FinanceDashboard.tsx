@@ -20,6 +20,7 @@ import { EmptyState, FilterPanel, InfoTile, MetricCard, PageHeader, PrimaryButto
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { Input } from '@/components/ui/input';
 import { FinanceMonthlyTrendChart, type FinanceMonthlyPoint } from './FinanceMonthlyTrendChart';
+import { EquipmentDailyRentChart, type EquipmentDailyRentChartProps } from './EquipmentDailyRentChart';
 
 interface FinanceDashboardProps {
   initialReport: FinancialReport;
@@ -92,6 +93,11 @@ export default function FinanceDashboard({ initialReport }: FinanceDashboardProp
   );
   const trendStartMonth = trendPoints[0]?.month ?? report.startDate.slice(0, 7);
   const trendEndMonth = trendPoints[trendPoints.length - 1]?.month ?? report.endDate.slice(0, 7);
+
+  // 设备日租金均值数据
+  const equipmentDailyRentData = useMemo(() => {
+    return report.equipmentDailyRentTrend ?? [];
+  }, [report.equipmentDailyRentTrend]);
 
   const handleQuery = () => {
     setError(null);
@@ -284,6 +290,14 @@ export default function FinanceDashboard({ initialReport }: FinanceDashboardProp
       <div className="grid gap-4 xl:grid-cols-1">
         <FinanceMonthlyTrendChart
           points={trendPoints}
+          startMonth={trendStartMonth}
+          endMonth={trendEndMonth}
+        />
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-1">
+        <EquipmentDailyRentChart
+          data={equipmentDailyRentData}
           startMonth={trendStartMonth}
           endMonth={trendEndMonth}
         />

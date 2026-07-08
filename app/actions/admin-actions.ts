@@ -207,6 +207,77 @@ export async function updateEquipmentStatus(
   return { success: true };
 }
 
+export async function updateEquipment(
+  equipmentId: string,
+  fields: {
+    name?: string;
+    category?: string | null;
+    serial_number?: string | null;
+    daily_fee?: number;
+    deposit?: number;
+    warranty_expire_date?: string | null;
+  }
+): Promise<{ success: boolean; error?: string }> {
+  await requireAuth();
+  const supabase = await createClient();
+
+  const updates: Record<string, unknown> = {};
+
+  if (fields.name !== undefined) {
+    const trimmed = String(fields.name).trim();
+    if (!trimmed) {
+      return { success: false, error: '设备名称不能为空' };
+    }
+    updates.name = trimmed;
+  }
+
+  if (fields.category !== undefined) {
+    updates.category = fields.category ? String(fields.category).trim() : null;
+  }
+
+  if (fields.serial_number !== undefined) {
+    updates.serial_number = fields.serial_number ? String(fields.serial_number).trim() : null;
+  }
+
+  if (fields.daily_fee !== undefined) {
+    const dailyFee = Number(fields.daily_fee);
+    if (Number.isNaN(dailyFee) || dailyFee < 0) {
+      return { success: false, error: '日租金必须是有效数字且不能为负数' };
+    }
+    updates.daily_fee = dailyFee;
+  }
+
+  if (fields.deposit !== undefined) {
+    const deposit = Number(fields.deposit);
+    if (Number.isNaN(deposit) || deposit < 0) {
+      return { success: false, error: '押金必须是有效数字且不能为负数' };
+    }
+    updates.deposit = deposit;
+  }
+
+  if (fields.warranty_expire_date !== undefined) {
+    updates.warranty_expire_date = fields.warranty_expire_date ? String(fields.warranty_expire_date).trim() : null;
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return { success: false, error: '没有要更新的字段' };
+  }
+
+  const { error } = await supabase
+    .from('equipment')
+    .update(updates)
+    .eq('id', equipmentId);
+
+  if (error) {
+    console.error('Error updating equipment:', error);
+    return { success: false, error: error.message };
+  }
+
+  revalidatePath('/admin');
+  revalidatePath('/admin/inventory');
+  return { success: true };
+}
+
 export async function checkEquipmentConflict(
   supabase: Awaited<ReturnType<typeof createClient>>,
   equipmentId: string,
