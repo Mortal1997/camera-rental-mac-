@@ -353,8 +353,13 @@ export default function InventoryManager({ equipment }: InventoryManagerProps) {
         return;
       }
 
-      setSuccessMsg(`已成功导入 ${validPreviewRecords.length} 台设备`);
-      setTimeout(() => setSuccessMsg(null), 3000);
+      const { importedCount = 0, skippedCount = 0 } = result;
+      let msg = `已成功导入 ${importedCount} 台设备`;
+      if (skippedCount > 0) {
+        msg += `（已跳过 ${skippedCount} 条重复记录）`;
+      }
+      setSuccessMsg(msg);
+      setTimeout(() => setSuccessMsg(null), 4000);
       closePreviewModal();
     });
   };

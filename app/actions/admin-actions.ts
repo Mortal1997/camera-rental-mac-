@@ -6,6 +6,11 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { pushDelivery, type ShippingMethod } from '@/lib/goofish/delivery';
 import type { Equipment, Order } from './types';
 
+function extractTrailingNumber(name: string): number | null {
+  const match = name.match(/-(\d+)$/);
+  return match ? parseInt(match[1], 10) : null;
+}
+
 async function requireAuth() {
   const supabase = await createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
@@ -29,7 +34,7 @@ export async function getAdminData(): Promise<AdminData> {
   const { data: equipmentData, error: equipmentError } = await supabase
     .from('equipment')
     .select('*')
-    .order('name', { ascending: true });
+    .order('created_at', { ascending: true });
 
   if (equipmentError) {
     console.error('Error fetching equipment:', equipmentError);
@@ -46,7 +51,21 @@ export async function getAdminData(): Promise<AdminData> {
     throw new Error('Failed to fetch orders data');
   }
 
-  const equipmentList = equipmentData ?? [];
+  const equipmentList = (equipmentData ?? []).sort((a, b) => {
+    // 优先按设备类型排序（null/空排在最后），其次按设备名称末尾的序号自然排序
+    const catA = a.category ?? '\uffff';
+    const catB = b.category ?? '\uffff';
+    if (catA !== catB) {
+      return catA.localeCompare(catB);
+    }
+    const numA = extractTrailingNumber(a.name);
+    const numB = extractTrailingNumber(b.name);
+    if (numA !== null && numB !== null) return numA - numB;
+    if (numA !== null) return -1;
+    if (numB !== null) return 1;
+    return a.name.localeCompare(b.name);
+  });
+
   const orders = ordersData ?? [];
 
   const equipmentWithOrders = equipmentList.map((eq) => ({
@@ -159,20 +178,56 @@ export async function deleteEquipment(
 
 export async function bulkCreateEquipment(
   records: Array<Record<string, unknown>>
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; skippedCount?: number; importedCount?: number }> {
   const user = await requireAuth();
 
   if (!Array.isArray(records) || records.length === 0) {
     return { success: false, error: '没有可导入的设备数据' };
   }
 
-  const payload = records.map((record) => {
+  const supabaseAdmin = await createServiceClient();
+
+  // 提取导入数据中的所有序列号
+  const serialNumbers = records
+    .map((r) => (r.serial_number as string) || null)
+    .filter(Boolean) as string[];
+
+  // 查询数据库中已存在的序列号
+  let existingSerials: Set<string> = new Set();
+  if (serialNumbers.length > 0) {
+    const { data: existingData } = await supabaseAdmin
+      .from('equipment')
+      .select('serial_number')
+      .in('serial_number', serialNumbers);
+
+    if (existingData) {
+      existingSerials = new Set(existingData.map((e) => e.serial_number));
+    }
+  }
+
+  // 过滤掉已存在的设备
+  const newRecords = records.filter((record) => {
+    const serial = (record.serial_number as string) || '';
+    return serial && !existingSerials.has(serial);
+  });
+
+  const skippedCount = records.length - newRecords.length;
+
+  if (newRecords.length === 0) {
+    return {
+      success: false,
+      error: `所有 ${skippedCount} 条记录均已存在，无需导入`,
+      skippedCount,
+      importedCount: 0
+    };
+  }
+
+  const payload = newRecords.map((record) => {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { issues, rowNumber, ...clean } = record;
     return { ...clean, status: 'available', user_id: user.id };
   });
 
-  const supabaseAdmin = await createServiceClient();
   const { error } = await supabaseAdmin.from('equipment').insert(payload);
 
   if (error) {
@@ -182,7 +237,7 @@ export async function bulkCreateEquipment(
 
   revalidatePath('/admin');
   revalidatePath('/admin/inventory');
-  return { success: true };
+  return { success: true, importedCount: payload.length, skippedCount };
 }
 
 export async function updateEquipmentStatus(
