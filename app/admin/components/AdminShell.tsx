@@ -3,15 +3,17 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { Menu } from 'lucide-react';
+import type { AdminViewer } from '@/lib/auth/admin';
 import AdminSidebar from './AdminSidebar';
 
-export default function AdminShell({ children }: { children: ReactNode }) {
+export default function AdminShell({ children, viewer }: { children: ReactNode; viewer: AdminViewer }) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-gray-50">
       <AdminSidebar
+        viewer={viewer}
         isCollapsed={isCollapsed}
         isMobileOpen={isMobileOpen}
         onCollapsedChange={setIsCollapsed}

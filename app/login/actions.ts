@@ -50,6 +50,41 @@ function getSignInErrorMessage(error: AuthError) {
   return '登录失败，请稍后重试；如果问题持续出现，请联系管理员。';
 }
 
+type AuthorizationLookupError = {
+  code?: string;
+  message?: string;
+  details?: string;
+  hint?: string;
+};
+
+function reportAuthorizationError(context: string, error: AuthorizationLookupError) {
+  console.error(`[auth] ${context}`, {
+    code: error.code ?? 'unknown',
+    message: error.message ?? null,
+    details: error.details ?? null,
+    hint: error.hint ?? null,
+  });
+}
+
+function getAuthorizationErrorMessage(error: AuthorizationLookupError) {
+  const code = error.code ?? '';
+  const message = (error.message ?? '').toLowerCase();
+  const schemaIsOutdated =
+    ['42703', '42P01', 'PGRST200', 'PGRST204', 'PGRST205'].includes(code) ||
+    message.includes('auth_user_id') ||
+    message.includes('schema cache');
+
+  if (schemaIsOutdated) {
+    return '服务器数据库尚未完成权限结构升级，请管理员执行最新数据库迁移后重试。';
+  }
+
+  if (code === '42501' || message.includes('permission denied')) {
+    return '服务器数据库权限策略尚未更新，请管理员执行最新数据库迁移后重试。';
+  }
+
+  return '权限校验服务暂时不可用，请稍后重试。';
+}
+
 export async function signInWithPassword(formData: FormData): Promise<AuthResult> {
   const email = String(formData.get('email') ?? '').trim().toLowerCase();
   const password = String(formData.get('password') ?? '');
@@ -82,9 +117,9 @@ export async function signInWithPassword(formData: FormData): Promise<AuthResult
     .maybeSingle();
 
   if (adminError) {
-    console.warn('[auth] admin authorization lookup failed', { code: adminError.code });
+    reportAuthorizationError('admin authorization lookup failed', adminError);
     await supabase.auth.signOut();
-    return { success: false, error: '权限校验服务暂时不可用，请稍后重试。' };
+    return { success: false, error: getAuthorizationErrorMessage(adminError) };
   }
 
   if (adminData) {
@@ -99,9 +134,9 @@ export async function signInWithPassword(formData: FormData): Promise<AuthResult
     .maybeSingle();
 
   if (approvedError) {
-    console.warn('[auth] approved user lookup failed', { code: approvedError.code });
+    reportAuthorizationError('approved user lookup failed', approvedError);
     await supabase.auth.signOut();
-    return { success: false, error: '权限校验服务暂时不可用，请稍后重试。' };
+    return { success: false, error: getAuthorizationErrorMessage(approvedError) };
   }
 
   if (approvedData) {
@@ -198,8 +233,9 @@ export async function signUp(formData: FormData): Promise<AuthResult> {
   });
 
   if (insertError) {
+    reportAuthorizationError('pending user insert failed', insertError);
     await serviceClient.auth.admin.deleteUser(createdUser.user.id);
-    return { success: false, error: '注册申请保存失败，请稍后重试' };
+    return { success: false, error: getAuthorizationErrorMessage(insertError) };
   }
 
   return { success: true };

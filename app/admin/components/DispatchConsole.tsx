@@ -37,13 +37,13 @@ import {
 } from './ui';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
+import { orderConflictsWithRange } from '@/lib/order-scheduling';
 
 interface DispatchConsoleProps {
   orders: Order[];
   equipmentList: Equipment[];
   activeOrders: Pick<Order, 'id' | 'start_date' | 'end_date' | 'status' | 'equipment_id'>[];
   highlightedExternalOrderIds?: string[];
-  userId?: string;
   rawRealtimeStatus?: string | null;
 }
 
@@ -337,7 +337,7 @@ function DispatchOrderCard({
   );
 }
 
-export default function DispatchConsole({ orders, equipmentList, activeOrders, highlightedExternalOrderIds = [], userId, rawRealtimeStatus }: DispatchConsoleProps) {
+export default function DispatchConsole({ orders, equipmentList, activeOrders, highlightedExternalOrderIds = [], rawRealtimeStatus }: DispatchConsoleProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -357,14 +357,12 @@ export default function DispatchConsole({ orders, equipmentList, activeOrders, h
     for (const o of activeOrders) {
       if (o.equipment_id !== eqId) continue;
       if (!o.start_date || !o.end_date) continue;
-      const oStart = new Date(o.start_date);
-      const oEnd = new Date(o.end_date);
-      if (from <= oEnd && to >= oStart) {
+      if (orderConflictsWithRange(o, from, to, selectedOrder?.id)) {
         conflictRanges.push(`${o.start_date}~${o.end_date}`);
       }
     }
     return conflictRanges.join(', ') || '';
-  }, [activeOrders]);
+  }, [activeOrders, selectedOrder?.id]);
 
   const { conflictEquipmentInfo, filteredEquipment } = useMemo(() => {
     const conflicts: Array<{ id: string; label: string; conflictRanges: string }> = [];
@@ -570,7 +568,6 @@ export default function DispatchConsole({ orders, equipmentList, activeOrders, h
   return (
     <>
       <RefreshRemoteOrders
-        userId={userId ?? ''}
         onStatusChange={setRefreshStatus}
         onRefreshed={handleRefreshed}
       />

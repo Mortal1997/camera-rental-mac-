@@ -2,12 +2,10 @@
 
 import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
 
 type ConnectionStatus = 'idle' | 'connecting' | 'live' | 'error';
 
 interface RefreshRemoteOrdersProps {
-  userId: string;
   onStatusChange?: (status: ConnectionStatus) => void;
   onRefreshed?: () => void;
 }
@@ -18,13 +16,11 @@ const POLL_INTERVAL_MS = 5_000;
 // 没前进、或 RLS 命中但 revalidate 没触发的边缘情况。
 const FALLBACK_REFRESH_MS = 30_000;
 
-type DispatchPollRow = {
-  id: string;
-  status: string;
-  created_at: string;
+type DispatchPollResponse = {
+  fingerprint: string | null;
 };
 
-export default function RefreshRemoteOrders({ userId, onStatusChange, onRefreshed }: RefreshRemoteOrdersProps) {
+export default function RefreshRemoteOrders({ onStatusChange, onRefreshed }: RefreshRemoteOrdersProps) {
   const router = useRouter();
   const connectionStatusRef = useRef<ConnectionStatus>('idle');
   const setConnectionStatus = (next: ConnectionStatus) => {
@@ -39,21 +35,18 @@ export default function RefreshRemoteOrders({ userId, onStatusChange, onRefreshe
   }, [onStatusChange, onRefreshed]);
 
   useEffect(() => {
-    if (!userId) return;
-
     let cancelled = false;
     setConnectionStatus('connecting');
     onStatusChangeRef.current?.('connecting');
 
-    const supabase = createClient();
     const setStatus = (next: ConnectionStatus) => {
       if (cancelled) return;
       setConnectionStatus(next);
       onStatusChangeRef.current?.(next);
     };
 
-    // 游标：上次看到的"最新订单 created_at"。第一次为空，意思是查全表。
-    let lastSeenCreatedAt: string | null = null;
+    // 首次请求只建立基线，后续指纹变化时刷新服务端组件。
+    let lastFingerprint: string | null | undefined;
     let inFlight = false;
     let consecutiveErrors = 0;
 
@@ -61,41 +54,28 @@ export default function RefreshRemoteOrders({ userId, onStatusChange, onRefreshe
       if (cancelled || inFlight) return;
       inFlight = true;
       try {
-        let query = supabase
-          .from('orders')
-          .select('id, status, created_at')
-          .eq('user_id', userId)
-          .in('status', ['unprocessed', 'pending_payment'])
-          .order('created_at', { ascending: false })
-          .limit(1);
-
-        if (lastSeenCreatedAt) {
-          query = query.gt('created_at', lastSeenCreatedAt);
-        }
-
-        const { data, error } = await query;
+        const response = await fetch('/api/orders/dispatch/latest', {
+          cache: 'no-store',
+          credentials: 'same-origin',
+        });
 
         if (cancelled) return;
 
-        if (error) {
-          console.warn('[Poll] dispatch query error:', error);
+        if (!response.ok) {
+          console.warn('[Poll] dispatch status request failed:', response.status);
           consecutiveErrors += 1;
           if (consecutiveErrors >= 3) setStatus('error');
           return;
         }
 
-        // 第一次成功查询后把状态切到 live
-        if (lastSeenCreatedAt === null) {
+        const data = (await response.json()) as DispatchPollResponse;
+        if (lastFingerprint === undefined) {
+          lastFingerprint = data.fingerprint;
           setStatus('live');
-        } else if (data && data.length > 0) {
-          // 游标之后有新订单 -> 拉一次 RSC
+        } else if (data.fingerprint !== lastFingerprint) {
+          lastFingerprint = data.fingerprint;
           router.refresh();
           onRefreshedRef.current?.();
-        }
-
-        const latest = (data?.[0] as DispatchPollRow | undefined) ?? null;
-        if (latest?.created_at) {
-          lastSeenCreatedAt = latest.created_at;
         }
         consecutiveErrors = 0;
       } catch (e) {
@@ -127,7 +107,7 @@ export default function RefreshRemoteOrders({ userId, onStatusChange, onRefreshe
       window.clearInterval(pollInterval);
       window.clearInterval(fallbackInterval);
     };
-  }, [userId, router]);
+  }, [router]);
 
   return null;
 }

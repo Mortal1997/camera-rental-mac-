@@ -1,8 +1,8 @@
 import type { Equipment, EquipmentWithOrders, Order } from '@/app/actions/types';
 import { getEffectiveEquipmentStatus } from '@/lib/equipment-status';
+import { orderConflictsWithRange } from '@/lib/order-scheduling';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const ACTIVE_ORDER_STATUSES = new Set<Order['status']>(['pending_payment', 'confirmed', 'using']);
 
 export type WorkbenchTaskLevel = 'urgent' | 'today' | 'upcoming' | 'attention';
 
@@ -74,19 +74,9 @@ function getOrderHref(order: Order): string {
   return '/admin/orders/pending';
 }
 
-function orderRangesConflict(candidate: Order, existing: Order, bufferDays = 2): boolean {
-  if (!ACTIVE_ORDER_STATUSES.has(existing.status) || existing.id === candidate.id) return false;
-
-  const candidateStart = parseDateKey(candidate.start_date);
-  const candidateEnd = parseDateKey(candidate.end_date);
-  const existingStart = parseDateKey(existing.start_date);
-  const existingEnd = parseDateKey(existing.end_date);
-
-  if (candidateStart === null || candidateEnd === null || existingStart === null || existingEnd === null) {
-    return existing.status === 'using';
-  }
-
-  return candidateStart <= existingEnd + bufferDays && existingStart <= candidateEnd + bufferDays;
+function orderRangesConflict(candidate: Order, existing: Order): boolean {
+  if (!candidate.start_date || !candidate.end_date) return false;
+  return orderConflictsWithRange(existing, candidate.start_date, candidate.end_date, candidate.id);
 }
 
 function getRecommendations(

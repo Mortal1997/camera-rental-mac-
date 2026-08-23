@@ -211,7 +211,7 @@ function TaskCard({
             <p className="mt-2 text-xs leading-5 text-emerald-800">
               {task.dueLabel === '租期待补充'
                 ? '请先补充订单开始与结束日期，系统才能安全计算可用设备。'
-                : '当前没有通过租期与两天周转缓冲校验的设备，请调整租期或先处理已有冲突。'}
+                : '当前没有租期可用的设备，请调整租期或先处理已有冲突。'}
             </p>
           )}
         </div>

@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { pushDelivery, type ShippingMethod } from '@/lib/goofish/delivery';
+import { rentalDateRangesOverlap } from '@/lib/order-scheduling';
 import type { Equipment, Order } from './types';
 
 const EQUIPMENT_STATUSES = new Set(['available', 'maintenance']);
@@ -441,19 +442,10 @@ export async function checkEquipmentConflict(
     return { hasConflict: false };
   }
 
-  const MS_2_DAYS = 2 * 24 * 60 * 60 * 1000;
-
   for (const order of data) {
     if (order.id === excludeOrderId || !order.start_date || !order.end_date) continue;
 
-    const existingStart = new Date(order.start_date);
-    const existingEnd = new Date(new Date(order.end_date).getTime() + MS_2_DAYS);
-    const selectedStart = new Date(startDate);
-    const selectedEnd = new Date(endDate);
-    const selectedEndWithBuffer = new Date(selectedEnd.getTime() + MS_2_DAYS);
-
-    // 两个方向都保留 2 天周转时间：新订单在前或在后都需要缓冲。
-    if (existingStart <= selectedEndWithBuffer && existingEnd >= selectedStart) {
+    if (rentalDateRangesOverlap(startDate, endDate, order.start_date, order.end_date)) {
       return {
         hasConflict: true,
         conflictingOrder: {
@@ -466,6 +458,10 @@ export async function checkEquipmentConflict(
   }
 
   return { hasConflict: false };
+}
+
+function getEquipmentConflictMessage(order: { customer_name: string; start_date: string; end_date: string }) {
+  return `设备排期冲突：与「${order.customer_name}」的订单（${order.start_date} ~ ${order.end_date}）占用了同一自然日，请调整租期或选择其他设备。`;
 }
 
 export async function assignEquipmentToOrder(
@@ -519,7 +515,7 @@ export async function assignEquipmentToOrder(
   if (conflict.hasConflict && conflict.conflictingOrder) {
     return {
       success: false,
-      error: `设备排期已变化，与「${conflict.conflictingOrder.customer_name}」的订单冲突，请重新选择。`,
+      error: getEquipmentConflictMessage(conflict.conflictingOrder),
     };
   }
 
@@ -595,7 +591,7 @@ export async function createManualOrder(
   if (conflict.hasConflict && conflict.conflictingOrder) {
     return {
       success: false,
-      error: `设备排期冲突：与「${conflict.conflictingOrder.customer_name}」的订单（${conflict.conflictingOrder.start_date} ~ ${conflict.conflictingOrder.end_date}）重叠。上一单结束后需强制休息 2 天，请调整租期。`,
+      error: getEquipmentConflictMessage(conflict.conflictingOrder),
     };
   }
 
@@ -731,7 +727,7 @@ export async function processExternalOrder(
   if (conflict.hasConflict && conflict.conflictingOrder) {
     return {
       success: false,
-      error: `设备排期冲突：与「${conflict.conflictingOrder.customer_name}」的订单（${conflict.conflictingOrder.start_date} ~ ${conflict.conflictingOrder.end_date}）重叠。上一单结束后需强制休息 2 天，请调整租期。`,
+      error: getEquipmentConflictMessage(conflict.conflictingOrder),
     };
   }
 
@@ -1054,7 +1050,7 @@ export async function updateOrderFields(
     if (conflict.hasConflict && conflict.conflictingOrder) {
       return {
         success: false,
-        error: `设备排期冲突：与「${conflict.conflictingOrder.customer_name}」的订单（${conflict.conflictingOrder.start_date} ~ ${conflict.conflictingOrder.end_date}）重叠。`,
+        error: getEquipmentConflictMessage(conflict.conflictingOrder),
       };
     }
   }

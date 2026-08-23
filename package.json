@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:scheduling": "node scripts/test-order-scheduling.mjs",
+    "test:goofish": "node scripts/test-goofish-order-amount.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",

@@ -8,7 +8,7 @@
 //  order_status, refund_status, modify_time, product_id, item_id）。
 //
 // push 推送字段非常有限——不含电话/地址/金额/商品名，所以异步阶段
-// 还要主动调 order/list 把这些字段补上，再 merge 入库（参见
+// 还要主动调 order/detail 把这些字段补上，再 merge 入库（参见
 // processOrderAsync）。
 //
 // 上线前必须人工核对：
@@ -26,6 +26,7 @@ import { createHash } from 'node:crypto';
 import { revalidatePath } from 'next/cache';
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchOrderDetailByNo, type GoofishOrderDetail } from '@/lib/goofish/order-detail';
+import { chooseSyncedOrderAmount, getGoofishFinalAmount, type GoofishAmountSource } from '@/lib/goofish/order-amount';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -48,6 +49,12 @@ type GoofishOrderPayload = {
   product_id?: number;
   item_id?: number;
   [key: string]: unknown;
+};
+
+type GoofishOrderMetadata = GoofishOrderPayload & {
+  update_time?: number;
+  goofish_detail?: GoofishOrderDetail;
+  amount_source?: GoofishAmountSource;
 };
 
 // 文档 required 字段：order_no, order_status, refund_status, modify_time,
@@ -92,7 +99,7 @@ type OrderRow = {
   deposit_exemption: string;
   shipping_method: string;
   deposit_paid: number;
-  metadata: GoofishOrderPayload;
+  metadata: GoofishOrderMetadata;
 };
 
 // 文档 order_status 枚举 → 内部 status
@@ -182,7 +189,7 @@ function buildShippingAddress(detail: GoofishOrderDetail): string {
 }
 
 /**
- * 用 webhook 推送 + 可选的 order/list 补全数据，构造要写入 orders 表的行。
+ * 用 webhook 推送 + 可选的 order/detail 补全数据，构造要写入 orders 表的行。
  * 设计要点：
  *   - 没有 enrichment 时：保留旧行为（占位符），仅靠 push 推过来的字段
  *   - 有 enrichment 时：用真实数据覆盖占位符字段（电话/地址/金额/商品名）
@@ -215,12 +222,7 @@ function buildOrderRow(
     ? buildShippingAddress(enrichment) || PLACEHOLDER_SHIPPING_ADDRESS
     : PLACEHOLDER_SHIPPING_ADDRESS;
 
-  const totalPrice =
-    enrichment &&
-    typeof enrichment.pay_amount === 'number' &&
-    Number.isFinite(enrichment.pay_amount)
-      ? enrichment.pay_amount / 100 // 闲管家金额单位是"分"
-      : 0;
+  const finalAmount = enrichment ? getGoofishFinalAmount(enrichment) : null;
 
   const expectedEquipmentModel = enrichment?.goods?.title || PLACEHOLDER_EQUIPMENT_MODEL;
 
@@ -230,7 +232,7 @@ function buildOrderRow(
     platform_source: '闲鱼',
     customer_name: customerName,
     customer_phone: customerPhone,
-    total_price: totalPrice,
+    total_price: finalAmount?.amount ?? 0,
     shipping_address: shippingAddress,
     expected_equipment_model: expectedEquipmentModel,
     status: mapOrderStatus(payload.order_status as number | undefined),
@@ -239,8 +241,26 @@ function buildOrderRow(
     deposit_exemption: '待确认',
     shipping_method: '待确认',
     deposit_paid: 0,
-    metadata: payload,
+    metadata: {
+      ...payload,
+      ...(enrichment ? { goofish_detail: enrichment } : {}),
+      ...(finalAmount ? { amount_source: finalAmount.source } : {}),
+    },
   };
+}
+
+function getMetadataFreshness(metadata: GoofishOrderMetadata | null | undefined): number {
+  const webhookTime = typeof metadata?.modify_time === 'number' && Number.isFinite(metadata.modify_time)
+    ? metadata.modify_time
+    : 0;
+  const metadataUpdateTime = typeof metadata?.update_time === 'number' && Number.isFinite(metadata.update_time)
+    ? metadata.update_time
+    : 0;
+  const detailTime = typeof metadata?.goofish_detail?.update_time === 'number' && Number.isFinite(metadata.goofish_detail.update_time)
+    ? metadata.goofish_detail.update_time
+    : 0;
+
+  return Math.max(webhookTime, metadataUpdateTime, detailTime);
 }
 
 // ---------------------------------------------------------------------
@@ -256,7 +276,7 @@ async function upsertOrderAtomic(
   supabaseAdmin: AdminClient,
   row: OrderRow,
 ): Promise<{ action: 'inserted' | 'updated' | 'skipped'; error?: string }> {
-  const incomingModifyTime = (row.metadata.modify_time as number | undefined) ?? 0;
+  const incomingModifyTime = getMetadataFreshness(row.metadata);
 
   // 1) 先查现有行 + 现有 modify_time（按 user_id + 平台 + 订单号定位）
   const { data: existing, error: selectError } = await supabaseAdmin
@@ -280,7 +300,7 @@ async function upsertOrderAtomic(
 
   const existingRow = existing as {
     id: string;
-    metadata: { modify_time?: number } | null;
+    metadata: GoofishOrderMetadata | null;
     customer_name: string;
     customer_phone: string;
     shipping_address: string;
@@ -289,10 +309,7 @@ async function upsertOrderAtomic(
     start_date: string | null;
     end_date: string | null;
   };
-  const existingModifyTime =
-    typeof existingRow.metadata?.modify_time === 'number'
-      ? existingRow.metadata.modify_time
-      : 0;
+  const existingModifyTime = getMetadataFreshness(existingRow.metadata);
 
   if (incomingModifyTime < existingModifyTime) {
     // 重试/补推送送来的旧事件，跳过
@@ -307,7 +324,7 @@ async function upsertOrderAtomic(
     customer_name: isRealCustomerName(existingRow.customer_name) ? existingRow.customer_name : row.customer_name,
     customer_phone: isRealCustomerPhone(existingRow.customer_phone) ? existingRow.customer_phone : row.customer_phone,
     shipping_address: isRealShippingAddress(existingRow.shipping_address) ? existingRow.shipping_address : row.shipping_address,
-    total_price: existingRow.total_price > 0 ? existingRow.total_price : row.total_price,
+    total_price: chooseSyncedOrderAmount(existingRow.total_price, row.total_price),
     expected_equipment_model: isRealEquipmentModel(existingRow.expected_equipment_model) ? existingRow.expected_equipment_model : row.expected_equipment_model,
     start_date: existingRow.start_date ?? row.start_date,
     end_date: existingRow.end_date ?? row.end_date,
@@ -432,7 +449,7 @@ export async function POST(request: NextRequest) {
 
     // -------- 7. 立即返 success（不等业务） --------
     // 把"业务处理"扔到 setImmediate 异步执行。失败仅记日志，不重试。
-    // 把 appKey/appSecret 一起传过去，异步阶段会调 order/list 拿详情补全数据。
+    // 把 appKey/appSecret 一起传过去，异步阶段会调 order/detail 拿详情补全数据。
     setImmediate(() => {
       void processOrderAsync(
         supabaseAdmin,
@@ -459,7 +476,7 @@ export async function POST(request: NextRequest) {
 // 失败仅记日志——闲管家最多重试 3 次，但我们的写入是幂等的，重试也安全
 //
 // 流程：
-//   1) 调闲管家 order/list 拿完整订单详情（电话/地址/金额/商品名）
+//   1) 调闲管家 order/detail 拿完整订单详情（电话/地址/最终成交金额/商品名）
 //      ——失败不抛错，按占位符继续入库；订单绝不能因为补全接口抽风就丢了
 //   2) 把详情 merge 进 webhook payload
 //   3) 幂等 upsert；已有真实数据时占位符不会覆盖
@@ -486,18 +503,19 @@ async function processOrderAsync(
       });
       if (result.ok) {
         enrichment = result.order;
-        log('order/list 补全成功', {
+        log('order/detail 补全成功', {
           orderNo: payload.order_no,
           hasReceiver: !!enrichment?.receiver_name,
           hasPhone: !!enrichment?.receiver_mobile,
           hasAddress: !!enrichment?.address,
           payAmount: enrichment?.pay_amount,
+          totalAmount: enrichment?.total_amount,
         });
       } else {
-        log('order/list 补全失败（继续按占位符入库）', result.reason);
+        log('order/detail 补全失败（继续按占位符入库）', result.reason);
       }
     } catch (enrichError) {
-      log('order/list 补全异常（继续按占位符入库）', {
+      log('order/detail 补全异常（继续按占位符入库）', {
         message: enrichError instanceof Error ? enrichError.message : String(enrichError),
       });
     }

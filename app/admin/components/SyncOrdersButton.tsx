@@ -19,6 +19,7 @@ type SyncResponse = {
   code?: string | null;
   hint?: string | null;
   inserted_count?: number;
+  updated_count?: number;
   inserted_external_order_ids?: string[];
   fetched_count?: number;
   skipped_duplicates?: number;
@@ -37,6 +38,7 @@ export default function SyncOrdersButton() {
     code?: string | null;
     hint?: string | null;
     insertedCount?: number;
+    updatedCount?: number;
     fetchedCount?: number;
     invalidOrders?: InvalidOrder[];
   } | null>(null);
@@ -84,10 +86,11 @@ export default function SyncOrdersButton() {
         tone: 'success',
         message: successMessage,
         insertedCount: data?.inserted_count,
+        updatedCount: data?.updated_count,
         fetchedCount: data?.fetched_count,
         invalidOrders: data?.invalid_orders ?? [],
         code: data?.sync_mode ?? null,
-        hint: typeof data?.skipped_duplicates === 'number' ? `跳过重复订单 ${data.skipped_duplicates} 单` : null,
+        hint: typeof data?.updated_count === 'number' ? `已更新最终成交价等上游信息 ${data.updated_count} 单` : null,
       });
 
       const nextParams = new URLSearchParams(searchParams.toString());
@@ -115,7 +118,7 @@ export default function SyncOrdersButton() {
   };
 
   const successSummary = result
-    ? `已同步 ${result.insertedCount ?? 0} 单${result.invalidOrders && result.invalidOrders.length > 0 ? ` · 异常 ${result.invalidOrders.length} 单` : ''}`
+    ? `新增 ${result.insertedCount ?? 0} 单 · 更新 ${result.updatedCount ?? 0} 单${result.invalidOrders && result.invalidOrders.length > 0 ? ` · 异常 ${result.invalidOrders.length} 单` : ''}`
     : null;
 
   return (

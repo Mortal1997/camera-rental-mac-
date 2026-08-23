@@ -40,7 +40,7 @@ export default async function DispatchPage({
   const { data: activeOrdersData, error: activeOrdersError } = await supabase
     .from('orders')
     .select('id, start_date, end_date, status, equipment_id')
-    .in('status', ['confirmed', 'using', 'pending'])
+    .in('status', ['pending_payment', 'confirmed', 'using'])
     .not('start_date', 'is', null)
     .not('end_date', 'is', null);
 
@@ -69,7 +69,6 @@ export default async function DispatchPage({
       equipmentList={equipmentList}
       activeOrders={activeOrders}
       highlightedExternalOrderIds={highlightedExternalOrderIds}
-      userId={user.id}
     />
   );
 }

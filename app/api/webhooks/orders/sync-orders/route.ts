@@ -2,27 +2,14 @@ import crypto from 'crypto';
 import { createClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
+import type { GoofishOrderDetail } from '@/lib/goofish/order-detail';
+import { getGoofishFinalAmount } from '@/lib/goofish/order-amount';
 
 const API_URL = 'https://open.goofish.pro/api/open/order/list';
 const PENDING_SHIPMENT_STATUS = 12;
 const PAGE_SIZE = 50;
 
-type GoofishOrder = {
-  order_no?: string;
-  buyer_nick?: string;
-  pay_amount?: number;
-  receiver_mobile?: string;
-  receiver_name?: string;
-  prov_name?: string;
-  city_name?: string;
-  area_name?: string;
-  address?: string;
-  create_time?: number;
-  goods?: {
-    title?: string;
-  };
-  [key: string]: unknown;
-};
+type GoofishOrder = GoofishOrderDetail;
 
 type GoofishResponse = {
   code?: number;
@@ -74,10 +61,7 @@ async function buildSyncPayload(order: GoofishOrder, userId: string): Promise<Bu
     return { ok: false, reason: '缺少 order_no', orderNo: null, rawOrder: order };
   }
 
-  const totalPrice =
-    typeof order.pay_amount === 'number' && Number.isFinite(order.pay_amount)
-      ? order.pay_amount / 100
-      : 0;
+  const totalPrice = getGoofishFinalAmount(order)?.amount ?? 0;
 
   return {
     ok: true,
@@ -170,7 +154,7 @@ export async function GET() {
 
     const data = (await response.json()) as GoofishResponse;
 
-    if (data.code !== 0 || data.msg !== 'OK') {
+    if (data.code !== 0) {
       return NextResponse.json(
         { error: '闲管家接口错误', details: data },
         { status: 500 }
@@ -195,42 +179,103 @@ export async function GET() {
             ? '当前没有待发货的订单需要同步'
             : '订单数据格式异常，未写入任何订单',
         inserted_count: 0,
+        updated_count: 0,
         invalid_orders: invalidOrders,
       });
     }
 
-    // ── Step 4：写入数据库 ──
-    const { data: insertedData, error } = await supabase
+    // ── Step 4：按当前用户 + 平台 + 外部订单号拆分新增与更新 ──
+    // 不能用 ignoreDuplicates：卖家改价后，同一订单必须把最终成交价同步回来。
+    const externalOrderIds = formattedOrders.map((order) => order.external_order_id);
+    const { data: existingData, error: existingError } = await supabase
       .from('orders')
-      .upsert(formattedOrders, {
-        onConflict: 'external_order_id',
-        ignoreDuplicates: true,
-      })
-      .select('id');
+      .select('id, external_order_id')
+      .eq('user_id', user.id)
+      .eq('platform_source', '闲鱼')
+      .in('external_order_id', externalOrderIds);
 
-    if (error) {
-      console.error('[sync-orders] 数据库写入失败:', error);
+    if (existingError) {
+      console.error('[sync-orders] 查询已有订单失败:', existingError);
       return NextResponse.json(
-        { error: '数据库写入失败', details: error.message },
+        { error: '查询已有订单失败', details: existingError.message },
         { status: 500 }
       );
     }
 
-    const insertedCount = insertedData?.length ?? 0;
-    const insertedExternalOrderIds = insertedCount > 0
-      ? formattedOrders.slice(0, insertedCount).map((order) => order.external_order_id)
-      : [];
+    const existingByExternalId = new Map(
+      (existingData ?? []).map((row) => [row.external_order_id, row] as const),
+    );
+    const newOrders = formattedOrders.filter(
+      (order) => !existingByExternalId.has(order.external_order_id),
+    );
+    const existingOrders = formattedOrders.filter(
+      (order) => existingByExternalId.has(order.external_order_id),
+    );
+
+    let insertedExternalOrderIds: string[] = [];
+    if (newOrders.length > 0) {
+      const { data: insertedData, error: insertError } = await supabase
+        .from('orders')
+        .insert(newOrders)
+        .select('external_order_id');
+
+      if (insertError) {
+        console.error('[sync-orders] 新订单写入失败:', insertError);
+        return NextResponse.json(
+          { error: '新订单写入失败', details: insertError.message },
+          { status: 500 }
+        );
+      }
+
+      insertedExternalOrderIds = (insertedData ?? [])
+        .map((row) => row.external_order_id)
+        .filter((orderNo): orderNo is string => typeof orderNo === 'string');
+    }
+
+    const updateResults = await Promise.all(existingOrders.map(async (order) => {
+      const existing = existingByExternalId.get(order.external_order_id);
+      if (!existing) return null;
+
+      const updatePayload = {
+        metadata: order.metadata,
+        ...(order.total_price > 0 ? { total_price: order.total_price } : {}),
+      };
+      const { error: updateError } = await supabase
+        .from('orders')
+        .update(updatePayload)
+        .eq('id', existing.id)
+        .eq('user_id', user.id);
+
+      return updateError
+        ? { orderNo: order.external_order_id, error: updateError.message }
+        : null;
+    }));
+    const failedUpdates = updateResults.filter(
+      (result): result is { orderNo: string; error: string } => result !== null,
+    );
+
+    if (failedUpdates.length > 0) {
+      console.error('[sync-orders] 已有订单更新失败:', failedUpdates);
+      return NextResponse.json(
+        { error: '部分已有订单更新失败', failed_orders: failedUpdates },
+        { status: 500 }
+      );
+    }
+
+    const insertedCount = insertedExternalOrderIds.length;
+    const updatedCount = existingOrders.length;
 
     revalidatePath('/admin/orders/dispatch');
     revalidatePath('/admin/orders');
 
     return NextResponse.json({
       success: true,
-      message: `成功同步 ${insertedCount} 条闲管家待发货订单`,
+      message: `同步完成：新增 ${insertedCount} 单，更新 ${updatedCount} 单`,
       inserted_count: insertedCount,
+      updated_count: updatedCount,
       inserted_external_order_ids: insertedExternalOrderIds,
       fetched_count: formattedOrders.length,
-      skipped_duplicates: formattedOrders.length - insertedCount,
+      skipped_duplicates: 0,
       invalid_orders: invalidOrders,
     });
   } catch (error) {

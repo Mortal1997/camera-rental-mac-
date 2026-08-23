@@ -18,8 +18,9 @@ import {
   ShieldCheck,
   X,
 } from 'lucide-react';
+import { signOut } from '@/app/login/actions';
+import type { AdminViewer } from '@/lib/auth/admin';
 import { cn } from '@/lib/utils';
-import { createClient } from '@/lib/supabase/client';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
   DropdownMenu,
@@ -47,39 +48,17 @@ function getInitials(email: string) {
 }
 
 type SidebarProps = {
+  viewer: AdminViewer;
   isCollapsed: boolean;
   isMobileOpen: boolean;
   onCollapsedChange: (v: boolean) => void;
   onMobileClose: () => void;
 };
 
-export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedChange, onMobileClose }: SidebarProps) {
+export default function AdminSidebar({ viewer, isCollapsed, isMobileOpen, onCollapsedChange, onMobileClose }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const [user, setUser] = useState<{ email?: string; fullName?: string } | null>(null);
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
-
-  useEffect(() => {
-    async function loadUser() {
-      const supabase = createClient();
-      const { data } = await supabase.auth.getUser();
-      if (data.user) {
-        setUser({
-          email: data.user.email,
-          fullName: data.user.user_metadata?.full_name,
-        });
-
-        const { data: adminData } = await supabase
-          .from('admin_users')
-          .select('role')
-          .eq('auth_user_id', data.user.id)
-          .maybeSingle();
-        setIsSuperAdmin(adminData?.role === 'super_admin');
-      }
-    }
-    loadUser();
-  }, []);
 
   useEffect(() => {
     if (isMobileOpen) {
@@ -92,10 +71,11 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
 
   async function handleSignOut() {
     setSigningOut(true);
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push('/login');
-    router.refresh();
+    try {
+      await signOut();
+    } catch {
+      setSigningOut(false);
+    }
   }
 
   const navigationItems: NavItem[] = [
@@ -201,7 +181,7 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
           })}
         </ul>
 
-        {isSuperAdmin && adminOnlyItems.length > 0 && (
+        {viewer.isSuperAdmin && adminOnlyItems.length > 0 && (
           <>
             <p
               className={cn(
@@ -323,7 +303,7 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
             >
               <Avatar size="sm" className="ring-1 ring-sidebar-border shrink-0">
                 <AvatarFallback className="bg-sidebar-accent text-sidebar-foreground text-xs font-medium">
-                  {user?.email ? getInitials(user.email) : '?'}
+                  {getInitials(viewer.email)}
                 </AvatarFallback>
               </Avatar>
               <div className={cn(
@@ -331,11 +311,11 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
                 isCollapsed ? 'opacity-0 w-0' : 'opacity-100'
               )}>
                 <p className="truncate text-[13px] font-medium text-sidebar-foreground leading-tight">
-                  {user?.fullName ?? user?.email ?? '加载中…'}
+                  {viewer.fullName ?? viewer.email}
                 </p>
-                {user?.email && !user?.fullName && (
+                {viewer.fullName && (
                   <p className="truncate text-[11px] text-sidebar-foreground/50 leading-tight">
-                    {user.email}
+                    {viewer.email}
                   </p>
                 )}
               </div>

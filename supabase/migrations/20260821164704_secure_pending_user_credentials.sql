@@ -25,6 +25,34 @@ set auth_user_id = auth_user.id
 from auth.users as auth_user
 where admin.auth_user_id is null and lower(admin.email) = lower(auth_user.email);
 
+-- Fail before tightening NOT NULL when a self-hosted instance contains a
+-- management row without a matching Supabase Auth account. This keeps the
+-- transaction atomic and gives the operator an actionable error.
+do $$
+declare
+  unmatched_rows text;
+begin
+  select string_agg(source || ':' || coalesce(email, '<null>'), ', ' order by source, email)
+  into unmatched_rows
+  from (
+    select 'pending_users' as source, email
+    from public.pending_users where auth_user_id is null
+    union all
+    select 'approved_users' as source, email
+    from public.approved_users where auth_user_id is null
+    union all
+    select 'admin_users' as source, email
+    from public.admin_users where auth_user_id is null
+  ) as unmatched;
+
+  if unmatched_rows is not null then
+    raise exception 'Auth identity migration stopped: management rows have no matching auth.users account'
+      using detail = unmatched_rows,
+            hint = 'Create or restore the matching Auth users, then run this migration again.';
+  end if;
+end
+$$;
+
 create unique index if not exists pending_users_auth_user_id_key on public.pending_users(auth_user_id);
 create unique index if not exists approved_users_auth_user_id_key on public.approved_users(auth_user_id);
 create unique index if not exists admin_users_auth_user_id_key on public.admin_users(auth_user_id);
@@ -195,7 +223,22 @@ create index if not exists equipment_user_id_idx on public.equipment(user_id);
 create index if not exists orders_equipment_id_idx on public.orders(equipment_id);
 drop index if exists public.idx_user_settings_user_id;
 
-alter function public.handle_updated_at() set search_path = '';
-alter function public.update_updated_at_column() set search_path = '';
+-- PostgreSQL does not support IF EXISTS on ALTER FUNCTION. Resolve each
+-- optional trigger function first so this migration remains portable across
+-- managed and self-hosted Supabase versions.
+do $$
+begin
+  if to_regprocedure('public.handle_updated_at()') is not null then
+    execute 'alter function public.handle_updated_at() set search_path = pg_catalog';
+  end if;
+  if to_regprocedure('public.update_updated_at_column()') is not null then
+    execute 'alter function public.update_updated_at_column() set search_path = pg_catalog';
+  end if;
+end
+$$;
+
+-- Direct SQL changes on self-hosted PostgREST can otherwise keep the previous
+-- column/policy metadata until its schema cache refreshes.
+notify pgrst, 'reload schema';
 
 commit;
