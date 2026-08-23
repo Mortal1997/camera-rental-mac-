@@ -46,6 +46,20 @@ function formatMonthKey(dateString: string) {
   return dateString.slice(0, 7);
 }
 
+function getInclusiveRentalDays(start: string, end: string) {
+  const startParts = start.split('-').map(Number);
+  const endParts = end.split('-').map(Number);
+  if (startParts.length !== 3 || endParts.length !== 3) return 0;
+
+  const [startYear, startMonth, startDay] = startParts;
+  const [endYear, endMonth, endDay] = endParts;
+  const startUtc = Date.UTC(startYear, startMonth - 1, startDay);
+  const endUtc = Date.UTC(endYear, endMonth - 1, endDay);
+  if (!Number.isFinite(startUtc) || !Number.isFinite(endUtc) || endUtc < startUtc) return 0;
+
+  return Math.floor((endUtc - startUtc) / (24 * 60 * 60 * 1000)) + 1;
+}
+
 export async function getFinancialReport(
   startDate?: string,
   endDate?: string
@@ -128,12 +142,9 @@ export async function getFinancialReport(
     const category = order.equipment?.category ?? '未分类';
     if (!order.equipment) continue;
 
-    const startDate = order.start_date ? new Date(order.start_date) : null;
-    const endDate = order.end_date ? new Date(order.end_date) : null;
+    if (!order.start_date || !order.end_date) continue;
 
-    if (!startDate || !endDate) continue;
-
-    const days = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    const days = getInclusiveRentalDays(order.start_date, order.end_date);
     if (days <= 0) continue;
 
     const totalPrice = Number(order.total_price || 0);

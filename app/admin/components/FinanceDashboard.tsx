@@ -20,7 +20,7 @@ import { EmptyState, FilterPanel, InfoTile, MetricCard, PageHeader, PrimaryButto
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { Input } from '@/components/ui/input';
 import { FinanceMonthlyTrendChart, type FinanceMonthlyPoint } from './FinanceMonthlyTrendChart';
-import { EquipmentDailyRentChart, type EquipmentDailyRentChartProps } from './EquipmentDailyRentChart';
+import { EquipmentDailyRentChart } from './EquipmentDailyRentChart';
 
 interface FinanceDashboardProps {
   initialReport: FinancialReport;

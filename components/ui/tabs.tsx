@@ -29,10 +29,8 @@ const tabsListVariants = cva(
   {
     variants: {
       variant: {
-        // Apple style: no background, underline indicator
-        default: "gap-0 bg-transparent",
-        // Apple style: pill variant
-        pill: "gap-1 bg-[var(--color-canvas-parchment)] p-[3px] rounded-full",
+        default: "gap-1 rounded-xl bg-muted/75 p-1",
+        pill: "gap-1 rounded-full bg-[var(--color-canvas-parchment)] p-1",
       },
     },
     defaultVariants: {
@@ -65,22 +63,12 @@ function TabsTrigger({
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
       className={cn(
-        // Base styles
-        "relative inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-lg px-4 text-[17px] font-normal whitespace-nowrap text-[var(--color-ink-muted-48)] transition-all",
-        // Hover
-        "hover:text-[var(--color-ink)]",
-        // Focus
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary-focus)] focus-visible:ring-offset-2",
-        // Disabled
+        "relative inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-lg px-4 text-sm font-medium whitespace-nowrap text-muted-foreground transition-all",
+        "hover:text-foreground",
+        "focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary-focus)] focus-visible:ring-offset-1",
         "disabled:pointer-events-none disabled:opacity-50",
-        // Active state - Apple style underline
-        "data-active:text-[var(--color-ink)] data-active:font-semibold",
-        // Underline indicator for default variant
-        "after:absolute after:bg-transparent after:transition-all",
-        "data-[variant=default]:after:inset-x-0 after:bottom-0 after:h-0.5 data-[variant=default]:data-active:after:bg-[var(--color-ink)]",
-        // Pill indicator for pill variant
-        "data-[variant=pill]:rounded-full data-[variant=pill]:data-active:bg-[var(--color-canvas)] data-[variant=pill]:data-active:shadow-sm",
-        // Icons
+        "data-[state=active]:bg-card data-[state=active]:font-semibold data-[state=active]:text-foreground data-[state=active]:shadow-sm",
+        "group-data-[variant=pill]/tabs-list:rounded-full",
         "[&_svg]:pointer-events-none [&_svg]:shrink-0",
         className
       )}
@@ -96,7 +84,7 @@ function TabsContent({
   return (
     <TabsPrimitive.Content
       data-slot="tabs-content"
-      className={cn("flex-1 text-[17px] text-[var(--color-ink)] outline-none", className)}
+      className={cn("flex-1 text-sm text-foreground outline-none", className)}
       {...props}
     />
   )

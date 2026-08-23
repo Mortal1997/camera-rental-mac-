@@ -12,6 +12,7 @@ import {
   ChevronRight,
   ClipboardList,
   LayoutDashboard,
+  ListChecks,
   LogOut,
   Settings,
   ShieldCheck,
@@ -72,7 +73,7 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
         const { data: adminData } = await supabase
           .from('admin_users')
           .select('role')
-          .eq('email', data.user.email)
+          .eq('auth_user_id', data.user.id)
           .maybeSingle();
         setIsSuperAdmin(adminData?.role === 'super_admin');
       }
@@ -98,6 +99,7 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
   }
 
   const navigationItems: NavItem[] = [
+    { href: '/admin/operations', label: '今日工作台', icon: ListChecks },
     { href: '/admin/dashboard', label: '数据看板', icon: LayoutDashboard },
     { href: '/admin', label: '排期看板', icon: CalendarDays },
     { href: '/admin/orders/dispatch', label: '订单管理', icon: ClipboardList, matchPrefix: '/admin/orders' },
@@ -125,9 +127,9 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
         isCollapsed ? 'h-20 justify-center' : 'h-20 px-2.5'
       )}>
         <Link
-          href="/admin/dashboard"
+          href="/admin/operations"
           className={cn(
-            'flex h-9 items-center rounded-xl hover:bg-sidebar-accent transition-all duration-300 overflow-hidden',
+            'flex h-11 items-center overflow-hidden rounded-xl transition-all duration-300 hover:bg-sidebar-accent',
             isCollapsed ? 'justify-center' : 'gap-2.5 px-2 flex-1 min-w-0'
           )}
         >
@@ -151,7 +153,7 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
         </Link>
         <button
           onClick={onMobileClose}
-          className="flex size-9 shrink-0 items-center justify-center rounded-lg text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground lg:hidden"
+          className="flex size-11 shrink-0 items-center justify-center rounded-xl text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring lg:hidden"
           aria-label="关闭菜单"
         >
           <X className="size-4" />
@@ -178,7 +180,7 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
                   href={item.href}
                   onClick={onMobileClose}
                   className={cn(
-                    'flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-[13px] transition-all',
+                    'flex h-11 items-center gap-2.5 rounded-xl px-2.5 text-sm transition-all',
                     isActive
                       ? 'bg-sidebar-primary font-medium text-sidebar-primary-foreground shadow-sm'
                       : 'text-sidebar-foreground/72 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
@@ -220,7 +222,7 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
                       href={item.href}
                       onClick={onMobileClose}
                       className={cn(
-                        'flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-[13px] transition-all',
+                        'flex h-11 items-center gap-2.5 rounded-xl px-2.5 text-sm transition-all',
                         isActive
                           ? 'bg-sidebar-primary font-medium text-sidebar-primary-foreground shadow-sm'
                           : 'text-sidebar-foreground/72 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
@@ -262,7 +264,7 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
                   href={item.href}
                   onClick={onMobileClose}
                   className={cn(
-                    'flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-[13px] transition-all',
+                    'flex h-11 items-center gap-2.5 rounded-xl px-2.5 text-sm transition-all',
                     isActive
                       ? 'bg-sidebar-primary font-medium text-sidebar-primary-foreground shadow-sm'
                       : 'text-sidebar-foreground/72 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
@@ -287,7 +289,7 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
       <div className="hidden lg:flex shrink-0 p-1.5">
         <button
           onClick={() => onCollapsedChange(!isCollapsed)}
-          className="flex w-full h-9 items-center justify-center gap-2 rounded-lg px-2 text-[13px] text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all"
+          className="flex h-11 w-full items-center justify-center gap-2 rounded-xl px-2 text-sm text-sidebar-foreground/60 transition-all hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
           aria-label={isCollapsed ? '展开侧边栏' : '折叠侧边栏'}
         >
           <div className="flex size-4 shrink-0 items-center justify-center">
@@ -314,7 +316,7 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
               type="button"
               disabled={signingOut}
               className={cn(
-                'flex w-full h-9 items-center gap-2.5 rounded-lg px-2 text-left transition-all',
+                'flex h-11 w-full items-center gap-2.5 rounded-xl px-2 text-left transition-all',
                 'hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring',
                 signingOut && 'opacity-50 pointer-events-none'
               )}
@@ -374,13 +376,14 @@ export default function AdminSidebar({ isCollapsed, isMobileOpen, onCollapsedCha
           isMobileOpen ? 'visible' : 'invisible pointer-events-none'
         )}
       >
-        <div
+        <button
+          type="button"
+          aria-label="关闭菜单遮罩"
           className={cn(
             'absolute inset-0 bg-black/50 transition-opacity duration-300',
             isMobileOpen ? 'opacity-100' : 'opacity-0'
           )}
           onClick={onMobileClose}
-          aria-hidden="true"
         />
         <div
           className={cn(

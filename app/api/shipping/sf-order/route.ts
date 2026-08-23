@@ -1,6 +1,7 @@
 import crypto from 'crypto';
-import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
+import { createClient } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/service';
 
 const SF_API_URL = 'https://sfapi.sf-express.com/std/service';
 const SF_SERVICE_CODE = 'EXP_RECE_CREATE_ORDER';
@@ -34,12 +35,6 @@ type UserSettings = {
   sf_sender_phone: string | null;
   sf_sender_address: string | null;
 };
-
-function getRequiredEnv(name: string) {
-  const value = process.env[name]?.trim();
-  if (!value) throw new Error(`缺少环境变量：${name}`);
-  return value;
-}
 
 function md5(value: string): string {
   return crypto.createHash('md5').update(value, 'utf8').digest('hex');
@@ -140,9 +135,12 @@ function normalizeText(value: unknown): string | null {
 
 export async function POST(request: Request) {
   try {
-    // TODO: 后续接入真实 session 后，从 session 中获取 userId
-    const TEST_USER_ID = '00000000-0000-0000-0000-000000000000';
-    const userId = TEST_USER_ID;
+    const sessionClient = await createClient();
+    const { data: { user }, error: authError } = await sessionClient.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json({ success: false, error: '登录状态已失效，请重新登录' }, { status: 401 });
+    }
+    const userId = user.id;
 
     let body: RequestBody;
     try {
@@ -156,9 +154,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: '缺少 orderId 参数' }, { status: 400 });
     }
 
-    const supabaseUrl = getRequiredEnv('NEXT_PUBLIC_SUPABASE_URL');
-    const supabaseServiceRoleKey = getRequiredEnv('SUPABASE_SERVICE_ROLE_KEY');
-    const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
+    const supabase = await createServiceClient();
 
     // 查询用户顺丰密钥
     const { data: settings, error: settingsError } = await supabase
@@ -192,6 +188,7 @@ export async function POST(request: Request) {
       .from('orders')
       .select('id, customer_name, customer_phone, shipping_address, tracking_number, status')
       .eq('id', orderId)
+      .eq('user_id', userId)
       .maybeSingle<Order>();
 
     if (orderError) {
@@ -200,7 +197,11 @@ export async function POST(request: Request) {
     }
 
     if (!order) {
-      return NextResponse.json({ success: false, error: '订单不存在' }, { status: 404 });
+      return NextResponse.json({ success: false, error: '订单不存在或当前账号无权操作' }, { status: 404 });
+    }
+
+    if (!['pending_payment', 'confirmed'].includes(order.status)) {
+      return NextResponse.json({ success: false, error: '该订单当前状态不允许创建运单' }, { status: 409 });
     }
 
     if (order.tracking_number) {
@@ -263,9 +264,10 @@ export async function POST(request: Request) {
       .from('orders')
       .update({
         tracking_number: waybillNoStr,
-        status: 'shipped',
+        status: 'using',
       })
-      .eq('id', orderId);
+      .eq('id', orderId)
+      .eq('user_id', userId);
 
     if (updateError) {
       console.error('[sf-order] 更新订单运单号失败:', updateError);

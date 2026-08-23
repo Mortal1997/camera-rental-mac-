@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { ArrowLeftRight, ChevronLeft, ChevronRight, Package2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -9,9 +9,15 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLe
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { formatCurrency } from './_format';
 
-function prefersReducedMotion(): boolean {
+function getReducedMotion(): boolean {
   if (typeof window === 'undefined') return false;
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+function subscribeToReducedMotion(onStoreChange: () => void) {
+  const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+  mediaQuery.addEventListener('change', onStoreChange);
+  return () => mediaQuery.removeEventListener('change', onStoreChange);
 }
 
 export type SeriesRow = {
@@ -91,10 +97,14 @@ export function EquipmentRevenueSeriesChart({
       rows.map((r) => ({
         equipmentId: r.equipmentId,
         name: r.name,
-        displayName: truncateLabel(r.name, 8),
         current: r.current,
         previous: r.previous,
       })),
+    [rows],
+  );
+
+  const equipmentNameById = useMemo(
+    () => new Map(rows.map((row) => [row.equipmentId, row.name])),
     [rows],
   );
 
@@ -111,11 +121,8 @@ export function EquipmentRevenueSeriesChart({
 
   // 减少动画/禁用动画的阈值：数据量超过此值时关闭动画
   const ANIM_THRESHOLD = 60;
-  const [reducedMotion, setReducedMotion] = useState(false);
-
-  useEffect(() => {
-    setReducedMotion(prefersReducedMotion() || rows.length > ANIM_THRESHOLD);
-  }, [rows.length]);
+  const prefersReducedMotion = useSyncExternalStore(subscribeToReducedMotion, getReducedMotion, () => false);
+  const reducedMotion = prefersReducedMotion || rows.length > ANIM_THRESHOLD;
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -249,7 +256,7 @@ export function EquipmentRevenueSeriesChart({
                   >
                     <ChartContainer
                       config={CHART_CONFIG}
-                      className="min-h-[360px] w-full"
+                      className="h-[360px] min-h-[360px] w-full !aspect-auto"
                       style={chartStyle}
                       initialDimension={initialDimension}
                     >
@@ -260,10 +267,16 @@ export function EquipmentRevenueSeriesChart({
                       >
                         <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="#e2e8f0" />
                         <XAxis
-                          dataKey="displayName"
+                          // Keep the category value unique. Truncated device names can be
+                          // identical, which makes Recharts resolve every tooltip to the
+                          // first matching row.
+                          dataKey="equipmentId"
                           tickLine={false}
                           axisLine={false}
                           tick={{ fontSize: 10, fill: '#64748b' }}
+                          tickFormatter={(equipmentId: string) =>
+                            truncateLabel(equipmentNameById.get(equipmentId) ?? equipmentId, 8)
+                          }
                           interval={0}
                           angle={-35}
                           textAnchor="end"

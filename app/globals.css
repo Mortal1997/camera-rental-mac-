@@ -14,6 +14,17 @@
   --border-subtle: rgba(140, 140, 148, 0.16);
   --shadow-soft-dark: rgba(200, 200, 210, 0.4);
   --shadow-soft-light: rgba(255, 255, 255, 0.92);
+  --color-canvas: #ffffff;
+  --color-canvas-parchment: #f6f6f8;
+  --color-surface-pearl: #f0f0f3;
+  --color-ink: #1a1a1a;
+  --color-ink-muted-48: rgba(26, 26, 26, 0.62);
+  --color-ink-muted-80: rgba(26, 26, 26, 0.8);
+  --color-body-on-dark: #ffffff;
+  --color-on-primary: #ffffff;
+  --color-hairline: rgba(24, 24, 27, 0.12);
+  --color-divider-soft: rgba(24, 24, 27, 0.1);
+  --color-primary-focus: rgba(24, 24, 27, 0.32);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
@@ -51,7 +62,7 @@
 @theme inline {
   --color-background: var(--bg-main);
   --color-foreground: var(--text-main);
-  --font-sans: var(--font-sans);
+  --font-sans: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -103,7 +114,7 @@ body {
     radial-gradient(circle at bottom right, rgba(232, 233, 240, 0.72) 0%, transparent 28%),
     var(--bg-main);
   color: var(--text-main);
-  font-family: "SF Pro Display", "SF Pro Text", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
   letter-spacing: -0.01em;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -122,6 +133,19 @@ textarea {
 }
 
 .dark {
+  --bg-main: #111214;
+  --bg-card: #1c1d20;
+  --color-canvas: #1c1d20;
+  --color-canvas-parchment: #25262a;
+  --color-surface-pearl: #2b2c31;
+  --color-ink: #f5f5f6;
+  --color-ink-muted-48: rgba(245, 245, 246, 0.68);
+  --color-ink-muted-80: rgba(245, 245, 246, 0.84);
+  --color-body-on-dark: #ffffff;
+  --color-on-primary: #111214;
+  --color-hairline: rgba(255, 255, 255, 0.12);
+  --color-divider-soft: rgba(255, 255, 255, 0.1);
+  --color-primary-focus: rgba(255, 255, 255, 0.38);
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
@@ -216,5 +240,16 @@ textarea {
   .animate-chart-bar {
     animation: chart-bar-grow 0.6s cubic-bezier(0.22, 0.61, 0.36, 1) both;
     transform-origin: bottom;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

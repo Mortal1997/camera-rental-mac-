@@ -2,7 +2,7 @@
 
 import { format } from 'date-fns';
 import * as React from 'react';
-import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, useTransition } from 'react';
 import { type DateRange } from 'react-day-picker';
 import {
   CalendarRange,
@@ -46,6 +46,8 @@ interface DispatchConsoleProps {
   userId?: string;
   rawRealtimeStatus?: string | null;
 }
+
+const subscribeToHydration = () => () => {};
 
 const depositOptions = ['芝麻信用', '押金双免', '支付押金', '熟人免押'];
 const shippingMethodOptions = ['邮寄', '自提', '闪送'];
@@ -433,14 +435,9 @@ export default function DispatchConsole({ orders, equipmentList, activeOrders, h
     });
   }, [orders, searchTerm, platformFilter]);
 
-  const [mounted, setMounted] = useState(false);
+  const mounted = useSyncExternalStore(subscribeToHydration, () => true, () => false);
   const [refreshStatus, setRefreshStatus] = useState<'idle' | 'connecting' | 'live' | 'error'>('idle');
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
-
-  // Use useEffect to set mounted after first paint — avoids hydration mismatch
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const handleRefreshed = React.useCallback(() => {
     setLastRefreshedAt(new Date());

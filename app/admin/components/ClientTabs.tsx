@@ -39,7 +39,7 @@ export default function ClientTabs({ dispatchCount, pendingCount, activeCount }:
   } as const;
 
   return (
-    <nav className="flex items-center gap-1 rounded-2xl border border-border/70 bg-card p-1 shadow-sm">
+    <nav aria-label="订单状态" className="flex w-full items-center gap-1 overflow-x-auto rounded-2xl border border-border/70 bg-card p-1 shadow-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {tabs.map((tab) => {
         const isActive = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
         const count = counts[tab.href as keyof typeof counts];
@@ -49,7 +49,8 @@ export default function ClientTabs({ dispatchCount, pendingCount, activeCount }:
             key={tab.href}
             href={tab.href}
             className={cn(
-              'inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all duration-200',
+              'inline-flex min-h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium transition-all duration-200 sm:px-4',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-1',
               isActive
                 ? 'bg-zinc-900 text-zinc-50 shadow-sm'
                 : 'text-foreground hover:bg-muted/60'

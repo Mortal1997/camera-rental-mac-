@@ -6,6 +6,40 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { pushDelivery, type ShippingMethod } from '@/lib/goofish/delivery';
 import type { Equipment, Order } from './types';
 
+const EQUIPMENT_STATUSES = new Set(['available', 'maintenance']);
+const ORDER_STATUSES = new Set(['unprocessed', 'pending_payment', 'confirmed', 'using', 'returned', 'cancelled']);
+
+function isValidDateKey(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const [, year, month, day] = match.map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.toISOString().slice(0, 10) === value;
+}
+
+function getDateRangeError(startDate: string, endDate: string) {
+  if (!isValidDateKey(startDate) || !isValidDateKey(endDate)) {
+    return '租期日期格式无效';
+  }
+  if (startDate > endDate) {
+    return '结束日期不能早于开始日期';
+  }
+  return null;
+}
+
+async function getOwnedEquipment(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  equipmentId: string,
+  userId: string,
+) {
+  return supabase
+    .from('equipment')
+    .select('id, status')
+    .eq('id', equipmentId)
+    .eq('user_id', userId)
+    .maybeSingle();
+}
+
 function extractTrailingNumber(name: string): number | null {
   const match = name.match(/-(\d+)$/);
   return match ? parseInt(match[1], 10) : null;
@@ -114,11 +148,16 @@ export async function createEquipment(
   if (
     !name ||
     !daily_fee_raw ||
-    Number.isNaN(daily_fee) ||
+    !Number.isFinite(daily_fee) ||
+    daily_fee < 0 ||
     !deposit_raw ||
-    Number.isNaN(deposit)
+    !Number.isFinite(deposit) ||
+    deposit < 0
   ) {
     return { success: false, error: '请填写必填字段：设备名称、日租金、押金' };
+  }
+  if (warranty_expire_date && !isValidDateKey(warranty_expire_date)) {
+    return { success: false, error: '质保到期日期格式无效' };
   }
 
   const payload: Record<string, unknown> = {
@@ -148,27 +187,34 @@ export async function createEquipment(
 export async function deleteEquipment(
   equipmentId: string
 ): Promise<{ success: boolean; error?: string }> {
+  const user = await requireAuth();
   // 先将与该设备关联的订单的 equipment_id 置空，再删除设备
   // 这样避免外键约束（ON DELETE RESTRICT）导致的删除失败
   const supabaseAdmin = await createServiceClient();
   const { error: clearError } = await supabaseAdmin
     .from('orders')
     .update({ equipment_id: null })
-    .eq('equipment_id', equipmentId);
+    .eq('equipment_id', equipmentId)
+    .eq('user_id', user.id);
 
   if (clearError) {
     console.error('Error clearing equipment_id from orders:', clearError);
     return { success: false, error: clearError.message };
   }
 
-  const { error } = await supabaseAdmin
+  const { data: deletedEquipment, error } = await supabaseAdmin
     .from('equipment')
     .delete()
-    .eq('id', equipmentId);
+    .eq('id', equipmentId)
+    .eq('user_id', user.id)
+    .select('id');
 
   if (error) {
     console.error('Error deleting equipment:', error);
     return { success: false, error: error.message };
+  }
+  if (!deletedEquipment?.length) {
+    return { success: false, error: '设备不存在或当前账号无权删除' };
   }
 
   revalidatePath('/admin');
@@ -222,11 +268,34 @@ export async function bulkCreateEquipment(
     };
   }
 
-  const payload = newRecords.map((record) => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { issues, rowNumber, ...clean } = record;
-    return { ...clean, status: 'available', user_id: user.id };
-  });
+  const payload: Array<Record<string, unknown>> = [];
+  for (const [index, record] of newRecords.entries()) {
+    const name = String(record.name ?? '').trim();
+    const serialNumber = String(record.serial_number ?? '').trim();
+    const dailyFee = Number(record.daily_fee);
+    const deposit = Number(record.deposit);
+    const warrantyDate = record.warranty_expire_date
+      ? String(record.warranty_expire_date).trim()
+      : null;
+
+    if (!name || !serialNumber || !Number.isFinite(dailyFee) || dailyFee < 0 || !Number.isFinite(deposit) || deposit < 0) {
+      return { success: false, error: `第 ${index + 1} 条设备数据不完整或金额无效` };
+    }
+    if (warrantyDate && !isValidDateKey(warrantyDate)) {
+      return { success: false, error: `第 ${index + 1} 条设备的质保日期无效` };
+    }
+
+    payload.push({
+      name,
+      category: String(record.category ?? '').trim() || null,
+      serial_number: serialNumber,
+      daily_fee: dailyFee,
+      deposit,
+      warranty_expire_date: warrantyDate,
+      status: 'available',
+      user_id: user.id,
+    });
+  }
 
   const { error } = await supabaseAdmin.from('equipment').insert(payload);
 
@@ -244,17 +313,25 @@ export async function updateEquipmentStatus(
   equipmentId: string,
   newStatus: string
 ): Promise<{ success: boolean; error?: string }> {
-  await requireAuth();
+  const user = await requireAuth();
+  if (!EQUIPMENT_STATUSES.has(newStatus)) {
+    return { success: false, error: '不支持的设备状态' };
+  }
   const supabase = await createClient();
 
-  const { error } = await supabase
+  const { data: updatedEquipment, error } = await supabase
     .from('equipment')
     .update({ status: newStatus })
-    .eq('id', equipmentId);
+    .eq('id', equipmentId)
+    .eq('user_id', user.id)
+    .select('id');
 
   if (error) {
     console.error('Error updating equipment status:', error);
     return { success: false, error: error.message };
+  }
+  if (!updatedEquipment?.length) {
+    return { success: false, error: '设备不存在或当前账号无权修改' };
   }
 
   revalidatePath('/admin');
@@ -273,7 +350,7 @@ export async function updateEquipment(
     warranty_expire_date?: string | null;
   }
 ): Promise<{ success: boolean; error?: string }> {
-  await requireAuth();
+  const user = await requireAuth();
   const supabase = await createClient();
 
   const updates: Record<string, unknown> = {};
@@ -296,7 +373,7 @@ export async function updateEquipment(
 
   if (fields.daily_fee !== undefined) {
     const dailyFee = Number(fields.daily_fee);
-    if (Number.isNaN(dailyFee) || dailyFee < 0) {
+    if (!Number.isFinite(dailyFee) || dailyFee < 0) {
       return { success: false, error: '日租金必须是有效数字且不能为负数' };
     }
     updates.daily_fee = dailyFee;
@@ -304,14 +381,18 @@ export async function updateEquipment(
 
   if (fields.deposit !== undefined) {
     const deposit = Number(fields.deposit);
-    if (Number.isNaN(deposit) || deposit < 0) {
+    if (!Number.isFinite(deposit) || deposit < 0) {
       return { success: false, error: '押金必须是有效数字且不能为负数' };
     }
     updates.deposit = deposit;
   }
 
   if (fields.warranty_expire_date !== undefined) {
-    updates.warranty_expire_date = fields.warranty_expire_date ? String(fields.warranty_expire_date).trim() : null;
+    const warrantyDate = fields.warranty_expire_date ? String(fields.warranty_expire_date).trim() : null;
+    if (warrantyDate && !isValidDateKey(warrantyDate)) {
+      return { success: false, error: '质保到期日期格式无效' };
+    }
+    updates.warranty_expire_date = warrantyDate;
   }
 
   if (Object.keys(updates).length === 0) {
@@ -321,7 +402,8 @@ export async function updateEquipment(
   const { error } = await supabase
     .from('equipment')
     .update(updates)
-    .eq('id', equipmentId);
+    .eq('id', equipmentId)
+    .eq('user_id', user.id);
 
   if (error) {
     console.error('Error updating equipment:', error);
@@ -339,36 +421,39 @@ export async function checkEquipmentConflict(
   startDate: string,
   endDate: string,
   excludeOrderId?: string
-): Promise<{ hasConflict: boolean; conflictingOrder?: { customer_name: string; start_date: string; end_date: string } }> {
+): Promise<{
+  hasConflict: boolean;
+  error?: string;
+  conflictingOrder?: { customer_name: string; start_date: string; end_date: string };
+}> {
   const { data, error } = await supabase
     .from('orders')
-    .select('customer_name, start_date, end_date')
+    .select('id, customer_name, start_date, end_date')
     .eq('equipment_id', equipmentId)
-    .in('status', ['pending_payment', 'confirmed', 'using'])
-    .gte('end_date', startDate);
+    .in('status', ['pending_payment', 'confirmed', 'using']);
 
-  if (error || !data || data.length === 0) {
+  if (error) {
+    console.error('Error checking equipment conflict:', error);
+    return { hasConflict: false, error: '暂时无法校验设备排期，请稍后重试' };
+  }
+
+  if (!data || data.length === 0) {
     return { hasConflict: false };
   }
 
   const MS_2_DAYS = 2 * 24 * 60 * 60 * 1000;
 
   for (const order of data) {
-    if (excludeOrderId) {
-      const { data: excludeData } = await supabase
-        .from('orders')
-        .select('id')
-        .eq('id', excludeOrderId)
-        .maybeSingle();
-      if (excludeData) continue;
-    }
+    if (order.id === excludeOrderId || !order.start_date || !order.end_date) continue;
 
     const existingStart = new Date(order.start_date);
     const existingEnd = new Date(new Date(order.end_date).getTime() + MS_2_DAYS);
     const selectedStart = new Date(startDate);
     const selectedEnd = new Date(endDate);
+    const selectedEndWithBuffer = new Date(selectedEnd.getTime() + MS_2_DAYS);
 
-    if (existingStart <= selectedEnd && existingEnd >= selectedStart) {
+    // 两个方向都保留 2 天周转时间：新订单在前或在后都需要缓冲。
+    if (existingStart <= selectedEndWithBuffer && existingEnd >= selectedStart) {
       return {
         hasConflict: true,
         conflictingOrder: {
@@ -381,6 +466,82 @@ export async function checkEquipmentConflict(
   }
 
   return { hasConflict: false };
+}
+
+export async function assignEquipmentToOrder(
+  orderId: string,
+  equipmentId: string,
+): Promise<{ success: boolean; error?: string }> {
+  const user = await requireAuth();
+  const supabase = await createClient();
+
+  const [{ data: order, error: orderError }, { data: equipment, error: equipmentError }] = await Promise.all([
+    supabase
+      .from('orders')
+      .select('id, status, start_date, end_date, equipment_id')
+      .eq('id', orderId)
+      .eq('user_id', user.id)
+      .maybeSingle(),
+    supabase
+      .from('equipment')
+      .select('id, status')
+      .eq('id', equipmentId)
+      .eq('user_id', user.id)
+      .maybeSingle(),
+  ]);
+
+  if (orderError || !order) {
+    return { success: false, error: '订单不存在或当前账号无权操作' };
+  }
+  if (equipmentError || !equipment) {
+    return { success: false, error: '设备不存在或当前账号无权操作' };
+  }
+  if (!['unprocessed', 'pending_payment', 'confirmed'].includes(order.status)) {
+    return { success: false, error: '该订单当前状态不允许重新分配设备' };
+  }
+  if (equipment.status === 'maintenance') {
+    return { success: false, error: '该设备正在维修，不能分配给订单' };
+  }
+  if (!order.start_date || !order.end_date) {
+    return { success: false, error: '请先补充订单租期，再分配设备' };
+  }
+
+  const conflict = await checkEquipmentConflict(
+    supabase,
+    equipmentId,
+    order.start_date,
+    order.end_date,
+    order.id,
+  );
+  if (conflict.error) {
+    return { success: false, error: conflict.error };
+  }
+  if (conflict.hasConflict && conflict.conflictingOrder) {
+    return {
+      success: false,
+      error: `设备排期已变化，与「${conflict.conflictingOrder.customer_name}」的订单冲突，请重新选择。`,
+    };
+  }
+
+  const nextStatus = order.status === 'unprocessed' ? 'pending_payment' : order.status;
+  const { data: updatedOrder, error: updateError } = await supabase
+    .from('orders')
+    .update({ equipment_id: equipmentId, status: nextStatus })
+    .eq('id', orderId)
+    .eq('user_id', user.id)
+    .select('id')
+    .maybeSingle();
+
+  if (updateError || !updatedOrder) {
+    console.error('Error assigning equipment to order:', updateError);
+    return { success: false, error: updateError?.message ?? '设备分配失败，请稍后重试' };
+  }
+
+  revalidatePath('/admin/operations');
+  revalidatePath('/admin');
+  revalidatePath('/admin/orders/dispatch');
+  revalidatePath('/admin/orders/pending');
+  return { success: true };
 }
 
 export async function createManualOrder(
@@ -408,12 +569,29 @@ export async function createManualOrder(
     !end_date ||
     !deposit_exemption ||
     !total_price_raw ||
-    Number.isNaN(total_price)
+    !Number.isFinite(total_price) ||
+    total_price < 0
   ) {
     return { success: false, error: '请完整填写订单信息' };
   }
 
+  const rangeError = getDateRangeError(start_date, end_date);
+  if (rangeError) {
+    return { success: false, error: rangeError };
+  }
+
+  const { data: equipment, error: equipmentError } = await getOwnedEquipment(supabase, equipment_id, user.id);
+  if (equipmentError || !equipment) {
+    return { success: false, error: '设备不存在或当前账号无权使用' };
+  }
+  if (equipment.status === 'maintenance') {
+    return { success: false, error: '该设备正在维修，不能创建订单' };
+  }
+
   const conflict = await checkEquipmentConflict(supabase, equipment_id, start_date, end_date);
+  if (conflict.error) {
+    return { success: false, error: conflict.error };
+  }
   if (conflict.hasConflict && conflict.conflictingOrder) {
     return {
       success: false,
@@ -459,11 +637,44 @@ export async function bulkCreateOrders(
     return { success: false, error: '没有可导入的订单数据' };
   }
 
-  const payload = records.map((record) => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { issues, rowNumber, ...clean } = record;
-    return { ...clean, status: 'confirmed', user_id: user.id };
-  });
+  const payload: Array<Record<string, unknown>> = [];
+  for (const [index, record] of records.entries()) {
+    const customerName = String(record.customer_name ?? '').trim();
+    const customerPhone = String(record.customer_phone ?? '').trim();
+    const shippingAddress = String(record.shipping_address ?? '').trim();
+    const totalPrice = Number(record.total_price);
+    const startDate = record.start_date ? String(record.start_date).trim() : null;
+    const endDate = record.end_date ? String(record.end_date).trim() : null;
+
+    if (!customerName || !customerPhone || !shippingAddress || !Number.isFinite(totalPrice) || totalPrice < 0) {
+      return { success: false, error: `第 ${index + 1} 条订单数据不完整或金额无效` };
+    }
+    if ((startDate && !endDate) || (!startDate && endDate)) {
+      return { success: false, error: `第 ${index + 1} 条订单必须同时填写开始和结束日期` };
+    }
+    if (startDate && endDate) {
+      const rangeError = getDateRangeError(startDate, endDate);
+      if (rangeError) {
+        return { success: false, error: `第 ${index + 1} 条订单：${rangeError}` };
+      }
+    }
+
+    payload.push({
+      customer_name: customerName,
+      customer_phone: customerPhone,
+      shipping_address: shippingAddress,
+      platform_source: String(record.platform_source ?? '').trim() || null,
+      external_order_id: String(record.external_order_id ?? '').trim() || null,
+      total_price: totalPrice,
+      start_date: startDate,
+      end_date: endDate,
+      deposit_exemption: String(record.deposit_exemption ?? '').trim() || null,
+      shipping_method: String(record.shipping_method ?? '').trim() || null,
+      deposit_paid: 0,
+      status: 'confirmed',
+      user_id: user.id,
+    });
+  }
 
   const supabaseAdmin = await createServiceClient();
   const { data, error } = await supabaseAdmin
@@ -486,6 +697,7 @@ export async function processExternalOrder(
   orderId: string,
   formData: FormData
 ): Promise<{ success: boolean; error?: string }> {
+  const user = await requireAuth();
   const supabase = await createClient();
 
   const equipment_id = String(formData.get('equipment_id') ?? '').trim();
@@ -499,7 +711,23 @@ export async function processExternalOrder(
     return { success: false, error: '请完整填写接单信息' };
   }
 
+  const rangeError = getDateRangeError(start_date, end_date);
+  if (rangeError) {
+    return { success: false, error: rangeError };
+  }
+
+  const { data: equipment, error: equipmentError } = await getOwnedEquipment(supabase, equipment_id, user.id);
+  if (equipmentError || !equipment) {
+    return { success: false, error: '设备不存在或当前账号无权使用' };
+  }
+  if (equipment.status === 'maintenance') {
+    return { success: false, error: '该设备正在维修，不能接单' };
+  }
+
   const conflict = await checkEquipmentConflict(supabase, equipment_id, start_date, end_date, orderId);
+  if (conflict.error) {
+    return { success: false, error: conflict.error };
+  }
   if (conflict.hasConflict && conflict.conflictingOrder) {
     return {
       success: false,
@@ -518,21 +746,12 @@ export async function processExternalOrder(
       shipping_method,
       status: 'confirmed',
     })
-    .eq('id', orderId);
+    .eq('id', orderId)
+    .eq('user_id', user.id);
 
   if (error) {
     console.error('Error processing external order:', error);
     return { success: false, error: error.message };
-  }
-
-  const { error: equipmentError } = await supabase
-    .from('equipment')
-    .update({ status: 'rented' })
-    .eq('id', equipment_id);
-
-  if (equipmentError) {
-    console.error('Error updating equipment during dispatch:', equipmentError);
-    return { success: false, error: equipmentError.message };
   }
 
   revalidatePath('/admin/dispatch');
@@ -544,15 +763,21 @@ export async function processExternalOrder(
 export async function deleteOrder(
   orderId: string
 ): Promise<{ success: boolean; error?: string }> {
+  const user = await requireAuth();
   const supabaseAdmin = await createServiceClient();
-  const { error } = await supabaseAdmin
+  const { data: deletedOrders, error } = await supabaseAdmin
     .from('orders')
     .delete()
-    .eq('id', orderId);
+    .eq('id', orderId)
+    .eq('user_id', user.id)
+    .select('id');
 
   if (error) {
     console.error('Error deleting order:', error);
     return { success: false, error: error.message };
+  }
+  if (!deletedOrders?.length) {
+    return { success: false, error: '订单不存在或当前账号无权删除' };
   }
 
   revalidatePath('/admin/orders');
@@ -577,8 +802,48 @@ export async function updateOrderStatus(
     expressName?: string;
   }
 ): Promise<{ success: boolean; error?: string; goofishPush?: 'ok' | 'skipped' | 'failed' | 'no_source' | 'no_carrier' }> {
-  await requireAuth();
+  const user = await requireAuth();
+  if (!ORDER_STATUSES.has(newStatus)) {
+    return { success: false, error: '不支持的订单状态' };
+  }
   const supabase = await createClient();
+
+  const { data: existingOrder, error: existingOrderError } = await supabase
+    .from('orders')
+    .select('id, status, equipment_id, tracking_number')
+    .eq('id', orderId)
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  if (existingOrderError || !existingOrder) {
+    return { success: false, error: '订单不存在或当前账号无权修改' };
+  }
+
+  const allowedTransitions: Record<string, string[]> = {
+    unprocessed: ['pending_payment', 'confirmed', 'cancelled'],
+    pending_payment: ['confirmed', 'using', 'cancelled'],
+    confirmed: ['using', 'cancelled'],
+    using: ['returned'],
+    returned: [],
+    cancelled: [],
+  };
+  if (existingOrder.status !== newStatus && !allowedTransitions[existingOrder.status]?.includes(newStatus)) {
+    return { success: false, error: `订单不能从“${existingOrder.status}”直接变更为“${newStatus}”` };
+  }
+  if (equipmentId && existingOrder.equipment_id && equipmentId !== existingOrder.equipment_id) {
+    return { success: false, error: '设备信息已变化，请刷新页面后重试' };
+  }
+  if (newStatus === 'using' && !existingOrder.equipment_id) {
+    return { success: false, error: '订单尚未分配设备，不能发货' };
+  }
+  if (
+    newStatus === 'using' &&
+    shippingMethod === 'express' &&
+    !trackingNumber?.trim() &&
+    !existingOrder.tracking_number
+  ) {
+    return { success: false, error: '快递发货必须填写运单号' };
+  }
 
   const updates: Record<string, unknown> = { status: newStatus };
   if (trackingNumber !== undefined) {
@@ -588,24 +853,31 @@ export async function updateOrderStatus(
     updates.shipping_method = shippingMethod;
   }
 
-  const { error } = await supabase
+  const { data: updatedOrder, error } = await supabase
     .from('orders')
     .update(updates)
-    .eq('id', orderId);
+    .eq('id', orderId)
+    .eq('user_id', user.id)
+    .select('id');
 
   if (error) {
     console.error('Error updating order status:', error);
     return { success: false, error: error.message };
   }
+  if (!updatedOrder?.length) {
+    return { success: false, error: '订单状态未更新，请刷新后重试' };
+  }
 
-  if (equipmentId) {
+  const ownedEquipmentId = existingOrder.equipment_id;
+  if (ownedEquipmentId) {
     const nextEquipmentStatus = newStatus === 'returned' ? 'available' : newStatus === 'using' ? 'rented' : null;
 
     if (nextEquipmentStatus) {
       const { error: equipmentError } = await supabase
         .from('equipment')
         .update({ status: nextEquipmentStatus })
-        .eq('id', equipmentId);
+        .eq('id', ownedEquipmentId)
+        .eq('user_id', user.id);
 
       if (equipmentError) {
         console.error('Error syncing equipment status:', equipmentError);
@@ -630,6 +902,7 @@ export async function updateOrderStatus(
         .from('orders')
         .select('external_order_id, platform_source, user_id')
         .eq('id', orderId)
+        .eq('user_id', user.id)
         .maybeSingle();
 
       if (orderError) {
@@ -709,26 +982,100 @@ export async function updateOrderFields(
     total_price?: number | null;
   }
 ): Promise<{ success: boolean; error?: string }> {
-  await requireAuth();
+  const user = await requireAuth();
+  const supabase = await createClient();
+  const supabaseAdmin = await createServiceClient();
 
-  const normalizedFields: Record<string, unknown> = { ...fields };
-  if (normalizedFields.total_price !== undefined) {
-    const raw = Number(normalizedFields.total_price);
-    normalizedFields.total_price = Number.isFinite(raw) && raw >= 0 ? raw : null;
+  const { data: existingOrder, error: existingOrderError } = await supabaseAdmin
+    .from('orders')
+    .select('id, equipment_id, start_date, end_date')
+    .eq('id', orderId)
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  if (existingOrderError || !existingOrder) {
+    return { success: false, error: '订单不存在或当前账号无权修改' };
   }
 
-  const supabaseAdmin = await createServiceClient();
-  const { error } = await supabaseAdmin
+  const normalizedFields: Record<string, unknown> = {};
+  for (const key of ['customer_name', 'customer_phone', 'shipping_address', 'notes'] as const) {
+    if (fields[key] !== undefined) {
+      normalizedFields[key] = String(fields[key]).trim() || null;
+    }
+  }
+  if (fields.equipment_id !== undefined) {
+    const equipmentId = String(fields.equipment_id).trim();
+    if (!equipmentId) return { success: false, error: '设备不能为空' };
+    normalizedFields.equipment_id = equipmentId;
+  }
+  if (fields.start_date !== undefined) {
+    normalizedFields.start_date = String(fields.start_date).trim() || null;
+  }
+  if (fields.end_date !== undefined) {
+    normalizedFields.end_date = String(fields.end_date).trim() || null;
+  }
+  if (fields.total_price !== undefined) {
+    const totalPrice = Number(fields.total_price);
+    if (!Number.isFinite(totalPrice) || totalPrice < 0) {
+      return { success: false, error: '订单金额必须是有效的非负数' };
+    }
+    normalizedFields.total_price = totalPrice;
+  }
+
+  if (Object.keys(normalizedFields).length === 0) {
+    return { success: false, error: '没有要更新的订单字段' };
+  }
+
+  const nextEquipmentId = (normalizedFields.equipment_id as string | undefined) ?? existingOrder.equipment_id;
+  const nextStartDate = (normalizedFields.start_date as string | null | undefined) ?? existingOrder.start_date;
+  const nextEndDate = (normalizedFields.end_date as string | null | undefined) ?? existingOrder.end_date;
+
+  if ((nextStartDate && !nextEndDate) || (!nextStartDate && nextEndDate)) {
+    return { success: false, error: '租期必须同时填写开始和结束日期' };
+  }
+  if (nextStartDate && nextEndDate) {
+    const rangeError = getDateRangeError(nextStartDate, nextEndDate);
+    if (rangeError) return { success: false, error: rangeError };
+  }
+
+  if (nextEquipmentId) {
+    const { data: equipment, error: equipmentError } = await getOwnedEquipment(supabase, nextEquipmentId, user.id);
+    if (equipmentError || !equipment) {
+      return { success: false, error: '设备不存在或当前账号无权使用' };
+    }
+    if (equipment.status === 'maintenance') {
+      return { success: false, error: '该设备正在维修，不能分配给订单' };
+    }
+  }
+
+  if (nextEquipmentId && nextStartDate && nextEndDate) {
+    const conflict = await checkEquipmentConflict(supabase, nextEquipmentId, nextStartDate, nextEndDate, orderId);
+    if (conflict.error) return { success: false, error: conflict.error };
+    if (conflict.hasConflict && conflict.conflictingOrder) {
+      return {
+        success: false,
+        error: `设备排期冲突：与「${conflict.conflictingOrder.customer_name}」的订单（${conflict.conflictingOrder.start_date} ~ ${conflict.conflictingOrder.end_date}）重叠。`,
+      };
+    }
+  }
+
+  const { data: updatedOrders, error } = await supabaseAdmin
     .from('orders')
     .update(normalizedFields)
-    .eq('id', orderId);
+    .eq('id', orderId)
+    .eq('user_id', user.id)
+    .select('id');
 
   if (error) {
     console.error('Error updating order fields:', error);
     return { success: false, error: error.message };
   }
+  if (!updatedOrders?.length) {
+    return { success: false, error: '订单不存在或当前账号无权修改' };
+  }
 
   revalidatePath('/admin');
+  revalidatePath('/admin/dashboard');
   revalidatePath('/admin/inventory');
   revalidatePath('/admin/orders');
   return { success: true };

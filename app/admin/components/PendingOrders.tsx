@@ -742,6 +742,7 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
                               variant="ghost"
                               size="icon-sm"
                               onClick={() => openEditDialog(order)}
+                              aria-label={`编辑 ${order.customer_name ?? '该客户'} 的订单信息`}
                               className="text-slate-500 hover:text-slate-900"
                             >
                               <Edit2 className="h-3.5 w-3.5" />
@@ -813,6 +814,7 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
                         <TextInput
                           type="text"
                           placeholder="运单号"
+                          aria-label={`${order.customer_name ?? '该客户'}订单的运单号`}
                           value={trackingInputs[order.id] ?? ''}
                           onChange={(e) => setTrackingInputs((prev) => ({ ...prev, [order.id]: e.target.value }))}
                           className="w-full !py-2 text-xs"

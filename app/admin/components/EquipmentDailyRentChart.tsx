@@ -109,7 +109,7 @@ export function EquipmentDailyRentChart({ data, startMonth, endMonth }: Equipmen
                   tick={{ fontSize: 11, fill: '#64748b' }}
                   interval={0}
                   tickFormatter={(value) => {
-                    const [year, month] = value.split('-');
+                    const month = value.split('-')[1];
                     return `${Number(month)}月`;
                   }}
                 />

@@ -1,23 +1,18 @@
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import ApprovalManager from './ApprovalManager';
+import { getApprovalDashboardData, type ApprovalDashboardData } from './actions';
 
 export const dynamic = 'force-dynamic';
 
 export default async function ApprovalPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user?.email) redirect('/login');
-
-  const { data } = await supabase
-    .from('admin_users')
-    .select('role')
-    .eq('email', user.email)
-    .maybeSingle();
-
-  if (data?.role !== 'super_admin') {
-    redirect('/forbidden');
+  let initialData: ApprovalDashboardData;
+  try {
+    initialData = await getApprovalDashboardData();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    if (message.includes('登录状态')) redirect('/login');
+    if (message.includes('权限')) redirect('/forbidden');
+    throw error;
   }
-
-  const ApprovalManager = (await import('./ApprovalManager')).default;
-  return <ApprovalManager />;
+  return <ApprovalManager initialData={initialData} />;
 }

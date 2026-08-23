@@ -1,17 +1,16 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 
-const PROTECTED_ROUTES = ['/admin', '/'];
+const PROTECTED_ROUTES = ['/admin', '/Home', '/'];
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-
+  const isLoginPage = pathname === '/login';
   const isProtected = PROTECTED_ROUTES.some((route) =>
     route === '/' ? pathname === '/' : pathname.startsWith(route)
   );
-  const isLoginPage = pathname === '/login';
 
-  if (!isProtected) {
+  if (!isProtected && !isLoginPage) {
     return NextResponse.next();
   }
 
@@ -37,13 +36,14 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data } = await supabase.auth.getClaims();
+  const isAuthenticated = Boolean(data?.claims?.sub);
 
-  if (!user && !isLoginPage) {
+  if (!isAuthenticated && isProtected) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
-  if (user && isLoginPage) {
+  if (isAuthenticated && isLoginPage) {
     return NextResponse.redirect(new URL('/admin', request.url));
   }
 

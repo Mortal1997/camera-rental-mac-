@@ -70,6 +70,8 @@ export default function SettingsForm({ initialData }: SettingsFormProps) {
       {/* ── Toast ── */}
       {toast && (
         <div
+          role="status"
+          aria-live="polite"
           className={`fixed bottom-8 right-8 z-50 flex items-center gap-3 rounded-2xl px-5 py-3.5 shadow-2xl backdrop-blur transition-all duration-300 ${
             toast.type === 'success'
               ? 'bg-emerald-50/90 border border-emerald-200 text-emerald-700'
@@ -104,7 +106,7 @@ export default function SettingsForm({ initialData }: SettingsFormProps) {
             </div>
             <div className="flex items-center gap-1.5 rounded-full bg-slate-50 px-3 py-1.5 text-xs text-slate-400 ring-1 ring-slate-200">
               <Shield className="h-3 w-3" />
-              加密存储
+              账号权限保护
             </div>
           </div>
 
@@ -208,7 +210,7 @@ export default function SettingsForm({ initialData }: SettingsFormProps) {
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-2 text-sm text-slate-400">
           <Lock className="h-3.5 w-3.5" />
-          <span>所有配置数据均经过加密存储，仅您本人可访问</span>
+          <span>配置受登录鉴权与数据库行级权限保护，仅当前账号可访问</span>
         </div>
         <div className="flex items-center gap-3">
           <Button
@@ -280,6 +282,7 @@ function PasswordInput({
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }) {
   const [show, setShow] = useState(false);
+  const fieldLabel = id === 'sf_check_word' ? '顺丰校验码' : '闲鱼 AppSecret';
   return (
     <div className="relative">
       <Input
@@ -294,8 +297,9 @@ function PasswordInput({
       <button
         type="button"
         onClick={() => setShow((s) => !s)}
+        aria-label={show ? `隐藏${fieldLabel}` : `显示${fieldLabel}`}
+        aria-pressed={show}
         className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-        tabIndex={-1}
       >
         {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
       </button>

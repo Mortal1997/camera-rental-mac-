@@ -32,11 +32,11 @@ const buttonVariants = cva(
       },
       size: {
         default: "h-11 gap-2 px-6 text-[17px] font-normal",
-        sm: "h-9 gap-1.5 px-5 text-[14px]",
+        sm: "h-11 gap-1.5 px-5 text-[14px] sm:h-9",
         lg: "h-12 gap-2 px-8 text-[18px]",
         xl: "h-14 gap-2 px-10 text-[18px]",
         icon: "size-11",
-        "icon-sm": "size-9",
+        "icon-sm": "size-11 sm:size-9",
         "icon-lg": "size-12",
       },
     },

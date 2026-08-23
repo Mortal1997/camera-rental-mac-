@@ -1,15 +1,19 @@
 import './globals.css';
-import { Inter } from "next/font/google";
-import { cn } from "@/lib/utils";
+import type { Metadata } from 'next';
 import { TooltipProvider } from "@/components/ui/tooltip";
+import PwaRegistration from '@/components/PwaRegistration';
 
-const inter = Inter({subsets:['latin'],variable:'--font-sans'});
-
-export const metadata = {
-  title: 'BANG BANG',
-  description: 'Professional Camera Rental Platform',
+export const metadata: Metadata = {
+  title: 'BANG BANG 租赁管理',
+  description: '相机租赁排期、订单、库存与运营工作台',
   icons: { icon: '/icon.png' },
-}
+  applicationName: 'BANG BANG 租赁管理',
+  appleWebApp: {
+    capable: true,
+    title: 'BANG BANG',
+    statusBarStyle: 'default',
+  },
+};
 
 export default function RootLayout({
   children,
@@ -17,9 +21,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={cn("h-full antialiased", "font-sans", inter.variable)}>
+    <html lang="zh-CN" className="h-full font-sans antialiased">
       <body className="min-h-full flex flex-col">
         <TooltipProvider>{children}</TooltipProvider>
+        <PwaRegistration />
       </body>
     </html>
   );

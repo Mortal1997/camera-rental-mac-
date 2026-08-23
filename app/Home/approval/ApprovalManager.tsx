@@ -1,24 +1,20 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
+import { useCallback, useState, useTransition } from 'react';
 import {
-  getPendingUsers,
   approveUser,
   rejectUser,
   deleteUser,
-  getApprovedUsers,
-  getActivityLogs,
+  getApprovalDashboardData,
   type PendingUser,
   type ApprovedUser,
   type ActivityLog,
+  type ApprovalDashboardData,
 } from './actions';
 import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from '@/components/ui/card';
 import {
   Check,
@@ -53,22 +49,33 @@ function PendingSection({
   onRefresh: () => void;
 }) {
   const [actionEmail, setActionEmail] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   function handleApprove(user: PendingUser) {
     setActionEmail(user.email);
+    setActionError(null);
     startTransition(async () => {
-      await approveUser(user.id, user.email);
+      const result = await approveUser(user.id);
       setActionEmail(null);
+      if (!result.success) {
+        setActionError(result.error ?? '审批失败');
+        return;
+      }
       onRefresh();
     });
   }
 
   function handleReject(user: PendingUser) {
     setActionEmail(user.email);
+    setActionError(null);
     startTransition(async () => {
-      await rejectUser(user.id, user.email);
+      const result = await rejectUser(user.id);
       setActionEmail(null);
+      if (!result.success) {
+        setActionError(result.error ?? '拒绝申请失败');
+        return;
+      }
       onRefresh();
     });
   }
@@ -93,6 +100,11 @@ function PendingSection({
 
   return (
     <div className="space-y-3">
+      {actionError ? (
+        <p role="alert" className="rounded-xl border border-rose-200/70 bg-rose-50/70 px-4 py-3 text-sm text-rose-700">
+          {actionError}
+        </p>
+      ) : null}
       {users.map((user) => (
         <Card key={user.id}>
           <CardContent className="flex items-center justify-between py-4 px-5">
@@ -116,6 +128,7 @@ function PendingSection({
                 onClick={() => handleApprove(user)}
                 disabled={isPending && actionEmail === user.email}
                 title="通过"
+                aria-label={`通过 ${user.email} 的注册申请`}
               >
                 <Check className="h-4 w-4" />
               </Button>
@@ -126,6 +139,7 @@ function PendingSection({
                 onClick={() => handleReject(user)}
                 disabled={isPending && actionEmail === user.email}
                 title="拒绝"
+                aria-label={`拒绝 ${user.email} 的注册申请`}
               >
                 <X className="h-4 w-4" />
               </Button>
@@ -144,26 +158,28 @@ function UsersSection({
   users: ApprovedUser[];
   onRefresh: () => void;
 }) {
-  const [deletingEmail, setDeletingEmail] = useState<string | null>(null);
   const [confirmEmail, setConfirmEmail] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   function handleDelete(user: ApprovedUser) {
-    setDeletingEmail(user.email);
+    setActionError(null);
     setConfirmEmail(user.email);
   }
 
   function confirmDelete(user: ApprovedUser) {
     startTransition(async () => {
-      await deleteUser(user.id, user.email);
-      setDeletingEmail(null);
+      const result = await deleteUser(user.id);
+      if (!result.success) {
+        setActionError(result.error ?? '删除用户失败');
+        return;
+      }
       setConfirmEmail(null);
       onRefresh();
     });
   }
 
   function cancelDelete() {
-    setDeletingEmail(null);
     setConfirmEmail(null);
   }
 
@@ -187,6 +203,11 @@ function UsersSection({
 
   return (
     <div className="space-y-3">
+      {actionError ? (
+        <p role="alert" className="rounded-xl border border-rose-200/70 bg-rose-50/70 px-4 py-3 text-sm text-rose-700">
+          {actionError}
+        </p>
+      ) : null}
       {users.map((user) => (
         <Card key={user.id}>
           <CardContent className="flex items-center justify-between py-4 px-5">
@@ -226,6 +247,7 @@ function UsersSection({
                   onClick={() => handleDelete(user)}
                   disabled={isPending}
                   title="删除账户"
+                  aria-label={`删除 ${user.email} 的账户`}
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
@@ -302,35 +324,27 @@ function LogsSection({ logs }: { logs: ActivityLog[] }) {
   );
 }
 
-export default function ApprovalManager() {
+export default function ApprovalManager({ initialData }: { initialData: ApprovalDashboardData }) {
   const [activeTab, setActiveTab] = useState<Tab>('pending');
-  const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
-  const [approvedUsers, setApprovedUsers] = useState<ApprovedUser[]>([]);
-  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [pendingUsers, setPendingUsers] = useState<PendingUser[]>(initialData.pendingUsers);
+  const [approvedUsers, setApprovedUsers] = useState<ApprovedUser[]>(initialData.approvedUsers);
+  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>(initialData.activityLogs);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function loadAll() {
+  const loadAll = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [pending, approved, logs] = await Promise.all([
-        getPendingUsers(),
-        getApprovedUsers(),
-        getActivityLogs(),
-      ]);
-      setPendingUsers(pending);
-      setApprovedUsers(approved);
-      setActivityLogs(logs);
+      const data = await getApprovalDashboardData();
+      setPendingUsers(data.pendingUsers);
+      setApprovedUsers(data.approvedUsers);
+      setActivityLogs(data.activityLogs);
     } catch (e) {
       setError(e instanceof Error ? e.message : '加载数据失败');
     } finally {
       setLoading(false);
     }
-  }
-
-  useEffect(() => {
-    loadAll();
   }, []);
 
   const tabs: { id: Tab; label: string; count: number; icon: React.ReactNode }[] = [
@@ -364,7 +378,7 @@ export default function ApprovalManager() {
       </div>
 
       {error && (
-        <div className="flex items-center gap-2 rounded-xl border border-rose-200/60 bg-rose-50/60 px-4 py-3 text-sm text-rose-600">
+        <div role="alert" className="flex items-center gap-2 rounded-xl border border-rose-200/60 bg-rose-50/60 px-4 py-3 text-sm text-rose-700">
           <AlertCircle className="h-4 w-4 shrink-0" />
           {error}
           <button
@@ -376,12 +390,14 @@ export default function ApprovalManager() {
         </div>
       )}
 
-      <div className="flex gap-1 bg-muted/60 p-1 rounded-xl w-fit">
+      <div role="tablist" aria-label="审批管理视图" className="flex w-full gap-1 overflow-x-auto rounded-xl bg-muted/60 p-1 sm:w-fit">
         {tabs.map((tab) => (
           <button
             key={tab.id}
+            role="tab"
+            aria-selected={activeTab === tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            className={`flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-all ${
               activeTab === tab.id
                 ? 'bg-background text-foreground shadow-sm'
                 : 'text-muted-foreground hover:text-foreground'
@@ -406,7 +422,7 @@ export default function ApprovalManager() {
 
       <div>
         {loading ? (
-          <div className="flex items-center justify-center py-20 text-muted-foreground text-sm">
+          <div role="status" className="flex items-center justify-center py-20 text-muted-foreground text-sm">
             加载中...
           </div>
         ) : activeTab === 'pending' ? (

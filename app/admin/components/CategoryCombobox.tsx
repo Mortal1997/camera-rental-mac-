@@ -27,9 +27,11 @@ export function CategoryCombobox({
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  const [previousValue, setPreviousValue] = useState(value);
+  if (previousValue !== value) {
+    setPreviousValue(value);
     setInputValue(value);
-  }, [value]);
+  }
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -89,18 +91,19 @@ export function CategoryCombobox({
           onFocus={handleInputFocus}
           placeholder={placeholder}
           className={cn(
-            'h-10 w-full rounded-md border border-slate-200 bg-white px-3 pr-8 text-sm text-slate-900 outline-none transition-colors',
+            'h-11 w-full rounded-xl border border-slate-200 bg-white px-3 pr-24 text-sm text-slate-900 outline-none transition-colors',
             'placeholder:text-slate-400',
             'focus:border-slate-400 focus:ring-2 focus:ring-slate-100',
             error ? 'border-rose-300 focus:border-rose-400 focus:ring-rose-100' : ''
           )}
         />
-        <div className="absolute inset-y-0 right-0 flex items-center gap-1 pr-2">
+        <div className="absolute inset-y-0 right-0 flex items-center pr-1">
           {inputValue && (
             <button
               type="button"
               onClick={handleClear}
-              className="flex h-5 w-5 items-center justify-center rounded text-slate-400 hover:text-slate-600"
+              aria-label="清空分类"
+              className="flex size-11 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -112,7 +115,9 @@ export function CategoryCombobox({
               setSearchTerm(inputValue);
               inputRef.current?.focus();
             }}
-            className="flex h-5 w-5 items-center justify-center rounded text-slate-400 hover:text-slate-600"
+            aria-label={isOpen ? '收起分类列表' : '展开分类列表'}
+            aria-expanded={isOpen}
+            className="flex size-11 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
           >
             <ChevronDown className={cn('h-4 w-4 transition-transform', isOpen && 'rotate-180')} />
           </button>

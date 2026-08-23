@@ -35,6 +35,7 @@ yarn-error.log*
 
 # local-only scripts and one-off files (mock push, ad-hoc sql, etc.)
 /tmp/
+/.codex-backups/
 
 # vercel
 .vercel

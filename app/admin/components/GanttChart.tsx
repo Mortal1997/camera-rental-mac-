@@ -18,7 +18,7 @@ import {
   Wrench,
 } from 'lucide-react';
 import { format } from 'date-fns';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { createPortal } from 'react-dom';
 import { type DateRange } from 'react-day-picker';
 import { updateOrderFields, updateOrderStatus } from '../../actions/admin-actions';
@@ -71,6 +71,7 @@ const MIN_STICKY_COLUMN_WIDTH = 120;
 const MAX_STICKY_COLUMN_WIDTH = 320;
 const DEFAULT_STICKY_COLUMN_WIDTH = 180;
 const DAY_COLUMN_WIDTH = 70;
+const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 const PAST_DAYS = 30;
 const FUTURE_DAYS = 60;
 const SCROLL_STEP_DAYS = 7;
@@ -134,13 +135,23 @@ function formatMonthLabel(date: Date) {
 }
 
 function getStartOfDay(dateLike: string | Date) {
+  if (typeof dateLike === 'string') {
+    const dateOnlyMatch = dateLike.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (dateOnlyMatch) {
+      const [, year, month, day] = dateOnlyMatch;
+      return new Date(Number(year), Number(month) - 1, Number(day));
+    }
+  }
+
   const date = new Date(dateLike);
   date.setHours(0, 0, 0, 0);
   return date;
 }
 
 function getDateDiffInDays(start: Date, end: Date) {
-  return Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+  const startDay = Date.UTC(start.getFullYear(), start.getMonth(), start.getDate());
+  const endDay = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());
+  return Math.round((endDay - startDay) / MILLISECONDS_PER_DAY);
 }
 
 function toDateKey(date: Date) {
@@ -205,7 +216,6 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
   const [isDragging, setIsDragging] = useState(false);
   const [hoveredOrderId, setHoveredOrderId] = useState<string | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<SelectedOrderState | null>(null);
-  const [deferredSelectedOrder, setDeferredSelectedOrder] = useState<SelectedOrderState | null>(null);
   const pendingOrderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editDateRange, setEditDateRange] = useState<DateRange | undefined>();
@@ -236,6 +246,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
     date.setDate(date.getDate() + index - PAST_DAYS);
     return date;
   }), [today]);
+  const ganttTableWidth = effectiveResizableWidth + days.length * DAY_COLUMN_WIDTH;
 
   const monthGroups = useMemo(() => {
     const groups: Array<{ label: string; startIndex: number; span: number }> = [];
@@ -507,15 +518,15 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
               <label className="flex flex-col gap-1.5 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)] sm:hidden">
                 搜索
-                <TextInput value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="设备名 / 序列号 / 客户名" />
+                <TextInput aria-label="搜索设备、序列号或客户" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="设备名 / 序列号 / 客户名" />
               </label>
               <div className="hidden sm:block">
                 <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">搜索</p>
-                <TextInput value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="设备名 / 序列号 / 客户名" />
+                <TextInput aria-label="搜索设备、序列号或客户" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="设备名 / 序列号 / 客户名" />
               </div>
               <div>
                 <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">机器的状态</p>
-                <SelectInput value={machineStatusFilter} onChange={(e) => setMachineStatusFilter(e.target.value as EffectiveEquipmentStatus | 'all')}>
+                <SelectInput aria-label="按机器状态筛选" value={machineStatusFilter} onChange={(e) => setMachineStatusFilter(e.target.value as EffectiveEquipmentStatus | 'all')}>
                   <option value="all">全部</option>
                   <option value="available">闲置</option>
                   <option value="pending">待发货</option>
@@ -525,7 +536,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
               </div>
               <div>
                 <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">设备分类</p>
-                <SelectInput value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+                <SelectInput aria-label="按设备分类筛选" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
                   <option value="all">全部分类</option>
                   {categories.map((category) => <option key={category} value={category}>{category}</option>)}
                 </SelectInput>
@@ -561,7 +572,14 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
               <EmptyState>当前筛选条件下暂无排期数据</EmptyState>
             </div>
           ) : (
-            <table className="w-full min-w-[5200px] table-fixed border-collapse text-xs sm:min-w-[7000px]">
+            <table
+              className="table-fixed border-collapse text-xs"
+              style={{ width: ganttTableWidth, minWidth: ganttTableWidth }}
+            >
+              <colgroup>
+                <col style={{ width: effectiveResizableWidth }} />
+                {days.map((date) => <col key={toDateKey(date)} style={{ width: DAY_COLUMN_WIDTH }} />)}
+              </colgroup>
               <thead>
                 <tr>
                   <th
@@ -673,7 +691,6 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
                         const endDate = getStartOfDay(order.end_date ?? order.start_date ?? date);
                         const rawSpan = getDateDiffInDays(startDate, endDate) + 1;
                         const startIndex = getDateDiffInDays(days[0], startDate);
-                        const clampedStart = Math.max(0, startIndex);
                         const renderSpan = Math.max(1, rawSpan - Math.max(0, -startIndex));
                         const isHovered = hoveredOrderId === order.id;
 
@@ -711,7 +728,6 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
                                   setTrackingNumberInput(order.tracking_number || '');
                                   setShipMethod('express');
                                   const orderData = { order, equipmentId: item.id, equipmentName: item.name, category: item.category };
-                                  setDeferredSelectedOrder(orderData);
                                   pendingOrderTimerRef.current = setTimeout(() => {
                                     pendingOrderTimerRef.current = null;
                                     setSelectedOrder(orderData);
@@ -775,7 +791,6 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
         open={Boolean(selectedOrder)}
         onClose={() => {
           if (pendingOrderTimerRef.current) { clearTimeout(pendingOrderTimerRef.current); pendingOrderTimerRef.current = null; }
-          setDeferredSelectedOrder(null);
           setSelectedOrder(null);
           setIsEditing(false);
           setEditForm({ customer_name: '', customer_phone: '', shipping_address: '', start_date: '', end_date: '', equipment_id: '', notes: '', total_price: '' });
@@ -815,7 +830,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
                       {nextStatusAction.label}
                     </SecondaryButton>
                   ) : null}
-                  <SecondaryButton onClick={() => { if (pendingOrderTimerRef.current) { clearTimeout(pendingOrderTimerRef.current); pendingOrderTimerRef.current = null; } setDeferredSelectedOrder(null); setSelectedOrder(null); setActionError(null); setCopyMessage(null); setTrackingNumberInput(''); setConfirmShip(false); }}>关闭</SecondaryButton>
+                  <SecondaryButton onClick={() => { if (pendingOrderTimerRef.current) { clearTimeout(pendingOrderTimerRef.current); pendingOrderTimerRef.current = null; } setSelectedOrder(null); setActionError(null); setCopyMessage(null); setTrackingNumberInput(''); setConfirmShip(false); }}>关闭</SecondaryButton>
                 </>
               ) : (
                 <>

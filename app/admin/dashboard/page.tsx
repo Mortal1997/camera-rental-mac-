@@ -23,6 +23,14 @@ function isSameMonth(date: Date | null, year: number, month: number) {
   return Boolean(date && date.getFullYear() === year && date.getMonth() === month);
 }
 
+function getOrderMonthDate(order: { start_date?: string | null; created_at?: string | null }) {
+  return parseDate(order.start_date) ?? parseDate(order.created_at);
+}
+
+function isRevenueOrder(order: { status: string }) {
+  return order.status === 'confirmed' || order.status === 'using' || order.status === 'returned';
+}
+
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('zh-CN', {
     style: 'currency',
@@ -59,14 +67,16 @@ export default async function DashboardPage() {
   const monthLabel = `${currentYear} 年 ${currentMonth + 1} 月`;
 
   const monthlyOrders = orders.filter(
-    (order) => isSameMonth(parseDate(order.start_date), currentYear, currentMonth) || isSameMonth(parseDate(order.created_at), currentYear, currentMonth)
+    (order) => order.status !== 'cancelled' && isSameMonth(getOrderMonthDate(order), currentYear, currentMonth)
   );
   const previousMonthOrders = orders.filter(
-    (order) => isSameMonth(parseDate(order.start_date), previousYear, previousMonth) || isSameMonth(parseDate(order.created_at), previousYear, previousMonth)
+    (order) => order.status !== 'cancelled' && isSameMonth(getOrderMonthDate(order), previousYear, previousMonth)
   );
+  const monthlyRevenueOrders = monthlyOrders.filter(isRevenueOrder);
+  const previousMonthRevenueOrders = previousMonthOrders.filter(isRevenueOrder);
 
-  const monthlyRevenue = monthlyOrders.reduce((sum, order) => sum + Number(order.total_price || 0), 0);
-  const previousMonthRevenue = previousMonthOrders.reduce((sum, order) => sum + Number(order.total_price || 0), 0);
+  const monthlyRevenue = monthlyRevenueOrders.reduce((sum, order) => sum + Number(order.total_price || 0), 0);
+  const previousMonthRevenue = previousMonthRevenueOrders.reduce((sum, order) => sum + Number(order.total_price || 0), 0);
 
   const monthlyOrderCount = monthlyOrders.length;
   const previousMonthOrderCount = previousMonthOrders.length;
@@ -97,7 +107,7 @@ export default async function DashboardPage() {
   const equipmentMap = new Map(equipment.map((item) => [item.id, item]));
   const revenueMap = new Map<string, { equipmentName: string; serialNumber: string; revenue: number; orderCount: number }>();
 
-  for (const order of monthlyOrders) {
+  for (const order of monthlyRevenueOrders) {
     const equipmentId = order.equipment_id ?? 'unassigned';
     const equipmentItem = order.equipment_id ? equipmentMap.get(order.equipment_id) : undefined;
     const current = revenueMap.get(equipmentId) ?? {
@@ -117,10 +127,8 @@ export default async function DashboardPage() {
   const monthlyRevenueByMonth: MonthlyRevenuePoint[] = (() => {
     const buckets = Array.from({ length: 12 }, () => ({ revenue: 0, orderCount: 0 }));
     for (const order of orders) {
-      const startDate = parseDate(order.start_date);
-      const createdDate = parseDate(order.created_at);
-      // 优先 start_date；都为空时跳过
-      const date = startDate ?? createdDate;
+      if (!isRevenueOrder(order)) continue;
+      const date = getOrderMonthDate(order);
       if (!date) continue;
       if (date.getFullYear() !== currentYear) continue;
       const monthIdx = date.getMonth(); // 0..11
@@ -134,7 +142,7 @@ export default async function DashboardPage() {
   // 即使两月都为 0 也保留设备（在 0 轴上占位，体现"全设备"的完整性）
   // 前端组件负责：≤20 占满卡片，>20 横向滚动
   const previousRevenueMap = new Map<string, number>();
-  for (const order of previousMonthOrders) {
+  for (const order of previousMonthRevenueOrders) {
     const equipmentId = order.equipment_id;
     if (!equipmentId) continue;
     previousRevenueMap.set(
@@ -143,11 +151,9 @@ export default async function DashboardPage() {
     );
   }
   const inCurrentMonth = (order: { start_date?: string | null; created_at?: string | null }) =>
-    isSameMonth(parseDate(order.start_date), currentYear, currentMonth) ||
-    isSameMonth(parseDate(order.created_at), currentYear, currentMonth);
+    isSameMonth(getOrderMonthDate(order), currentYear, currentMonth);
   const inPreviousMonth = (order: { start_date?: string | null; created_at?: string | null }) =>
-    isSameMonth(parseDate(order.start_date), previousYear, previousMonth) ||
-    isSameMonth(parseDate(order.created_at), previousYear, previousMonth);
+    isSameMonth(getOrderMonthDate(order), previousYear, previousMonth);
   const revenueSeries = equipment.map((item) => ({
     equipmentId: item.id,
     name: item.name,
@@ -159,7 +165,7 @@ export default async function DashboardPage() {
   // 翻转面的「所有订单」：当月 + 上月内全部设备的所有订单（不限 20）
   const equipmentNameMap = new Map(equipment.map((e) => [e.id, e.name]));
   const seriesOrders = orders
-    .filter((order) => inCurrentMonth(order) || inPreviousMonth(order))
+    .filter((order) => isRevenueOrder(order) && (inCurrentMonth(order) || inPreviousMonth(order)))
     .map((order) => ({
       id: order.id,
       equipmentId: order.equipment_id ?? null,
@@ -222,10 +228,10 @@ export default async function DashboardPage() {
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/70 bg-sky-50 text-sky-700">
                   <Truck className="h-4 w-4" />
                 </div>
-                <p className="text-[12px] font-medium text-muted-foreground">当前待发货</p>
+                <p className="text-[12px] font-medium text-muted-foreground">待发货设备</p>
               </div>
               <p className="mt-4 text-[28px] font-semibold tracking-[-0.04em] text-foreground">{statusSummary.pending}</p>
-              <p className="mt-1.5 text-[12px] font-medium text-muted-foreground">含已确认 / 待付款</p>
+              <p className="mt-1.5 text-[12px] font-medium text-muted-foreground">按设备当前有效排期统计</p>
             </CardContent>
           </Card>
         </Link>
@@ -237,7 +243,7 @@ export default async function DashboardPage() {
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/70 bg-amber-50 text-amber-700">
                   <PackageCheck className="h-4 w-4" />
                 </div>
-                <p className="text-[12px] font-medium text-muted-foreground">当前出租中</p>
+                <p className="text-[12px] font-medium text-muted-foreground">出租中设备</p>
               </div>
               <p className="mt-4 text-[28px] font-semibold tracking-[-0.04em] text-foreground">{statusSummary.using}</p>
               <p className="mt-1.5 text-[12px] font-medium text-muted-foreground">已发货正在使用</p>
@@ -273,14 +279,14 @@ export default async function DashboardPage() {
           </Card>
         </Link>
 
-        <Link href="/admin/orders/completed" className="block">
+        <Link href="/admin/inventory" className="block">
           <Card className="transition-colors hover:border-slate-300 hover:bg-slate-50/50">
             <CardContent className="pt-5">
               <div className="flex items-center gap-2.5">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/70 bg-slate-100 text-slate-700">
                   <Boxes className="h-4 w-4" />
                 </div>
-                <p className="text-[12px] font-medium text-muted-foreground">当前在库闲置</p>
+                <p className="text-[12px] font-medium text-muted-foreground">在库闲置设备</p>
               </div>
               <p className="mt-4 text-[28px] font-semibold tracking-[-0.04em] text-foreground">{statusSummary.idle}</p>
               <p className="mt-1.5 text-[12px] font-medium text-muted-foreground">不含维修中设备</p>
