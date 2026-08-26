@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState, useTransition } from 'react';
-import { CalendarRange, MapPin, MessageSquare, Phone, Truck, Trash2, User } from 'lucide-react';
+import { AlertTriangle, CalendarRange, MapPin, MessageSquare, Phone, Truck, Trash2, User } from 'lucide-react';
 import { deleteOrder, updateOrderStatus } from '../../actions/admin-actions';
 import type { Order } from '../../actions/types';
 import { EmptyState, PrimaryButton, SectionHeader, StatBadge, SurfaceCard, cn } from './ui';
@@ -102,25 +102,30 @@ export default function ActiveOrders({ orders }: ActiveOrdersProps) {
           {displayOrders.map((order) => {
             const overdue = isOverdue(order.end_date);
             const todayEnd = isToday(order.end_date);
+            const hasBrokenEquipmentLink = !order.equipment_id || !order.equipment;
 
             return (
               <div
                 key={order.id}
                 className={cn(
                   'group flex h-full flex-col rounded-xl border border-slate-200 bg-white p-3 transition-all hover:border-slate-300 hover:shadow-md md:p-4',
-                  overdue && 'border-rose-200 bg-rose-50/30',
+                  hasBrokenEquipmentLink
+                    ? 'border-red-300 bg-red-50/40'
+                    : overdue && 'border-rose-200 bg-rose-50/30',
                 )}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-slate-900 md:text-base">
-                      {order.equipment?.name ?? '—'}
+                      {order.equipment?.name ?? '设备关联缺失'}
                     </p>
                     <p className="mt-0.5 truncate text-xs text-slate-400">
                       {order.external_order_id || `内部单号：${order.id}`}
                     </p>
                   </div>
-                  {todayEnd ? (
+                  {hasBrokenEquipmentLink ? (
+                    <StatBadge tone="red" className="shrink-0">数据异常</StatBadge>
+                  ) : todayEnd ? (
                     <StatBadge tone="amber" className="shrink-0">今日到期</StatBadge>
                   ) : overdue ? (
                     <StatBadge tone="red" className="shrink-0">已逾期</StatBadge>
@@ -128,6 +133,13 @@ export default function ActiveOrders({ orders }: ActiveOrdersProps) {
                     <StatBadge tone="slate" className="shrink-0">租用中</StatBadge>
                   )}
                 </div>
+
+                {hasBrokenEquipmentLink ? (
+                  <div className="mt-3 flex items-start gap-2 rounded-xl border border-red-200 bg-white/80 px-3 py-2 text-xs leading-5 text-red-700">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span>订单仍在出租中，但设备记录已丢失。请核对后确认归还，或到订单管理中修正设备关联。</span>
+                  </div>
+                ) : null}
 
                 <div className="mt-3 flex-1 space-y-1.5 text-sm text-slate-600 md:mt-4 md:space-y-2">
                   <div className="flex items-center gap-2">

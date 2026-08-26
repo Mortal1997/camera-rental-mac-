@@ -69,13 +69,13 @@ function normalizeModel(value?: string | null): string {
 }
 
 function getOrderHref(order: Order): string {
+  if (order.status === 'using') return '/admin/orders/active';
   if (!order.equipment_id || order.status === 'unprocessed') {
     const highlight = order.external_order_id
       ? `?highlightOrders=${encodeURIComponent(order.external_order_id)}`
       : '';
     return `/admin/orders/dispatch${highlight}`;
   }
-  if (order.status === 'using') return '/admin/orders/active';
   if (order.status === 'returned' || order.status === 'cancelled') return '/admin/orders/completed';
   return '/admin/orders/pending';
 }
@@ -187,6 +187,23 @@ export function buildOperationsSnapshot(
     const startKey = parseDateKey(order.start_date);
     const endKey = parseDateKey(order.end_date);
     const isUnassigned = !order.equipment_id && ['unprocessed', 'pending_payment', 'confirmed'].includes(order.status);
+    const hasBrokenEquipmentLink = order.status === 'using' && (
+      !order.equipment_id || !equipmentMap.has(order.equipment_id)
+    );
+
+    if (hasBrokenEquipmentLink) {
+      addOrderTask(
+        tasks,
+        order,
+        'urgent',
+        'broken-equipment-link',
+        '订单设备关联异常',
+        '订单仍处于出租中，但关联设备不存在。请核对历史数据并确认归还或重新关联设备。',
+        '需要人工核对',
+        equipmentMap,
+      );
+      continue;
+    }
 
     if (isUnassigned) {
       const level: WorkbenchTaskLevel = startKey !== null && startKey <= todayKey + 1 ? 'urgent' : 'attention';

@@ -5,8 +5,8 @@ import { buildAdminOrders } from '../../utils';
 export const dynamic = 'force-dynamic';
 
 export default async function ActivePage() {
-  const { equipment } = await getAdminData();
-  const orders = buildAdminOrders(equipment).filter((order) => order.status === 'using');
+  const { equipment, orders: allOrders } = await getAdminData();
+  const orders = buildAdminOrders(equipment, allOrders).filter((order) => order.status === 'using');
 
   return <ActiveOrders orders={orders} />;
 }

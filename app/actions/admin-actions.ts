@@ -189,14 +189,34 @@ export async function deleteEquipment(
   equipmentId: string
 ): Promise<{ success: boolean; error?: string }> {
   const user = await requireAuth();
-  // 先将与该设备关联的订单的 equipment_id 置空，再删除设备
-  // 这样避免外键约束（ON DELETE RESTRICT）导致的删除失败
   const supabaseAdmin = await createServiceClient();
+
+  const { data: activeOrders, error: activeOrdersError } = await supabaseAdmin
+    .from('orders')
+    .select('id')
+    .eq('equipment_id', equipmentId)
+    .eq('user_id', user.id)
+    .in('status', ['unprocessed', 'pending_payment', 'confirmed', 'using'])
+    .limit(1);
+
+  if (activeOrdersError) {
+    console.error('Error checking active orders before deleting equipment:', activeOrdersError);
+    return { success: false, error: '检查设备关联订单失败，请稍后重试' };
+  }
+  if (activeOrders?.length) {
+    return {
+      success: false,
+      error: '该设备仍有关联的待处理、待发货或租用中订单，请先完成或取消订单后再删除',
+    };
+  }
+
+  // 仅允许历史终态订单解除关联；活跃订单始终保留设备关系。
   const { error: clearError } = await supabaseAdmin
     .from('orders')
     .update({ equipment_id: null })
     .eq('equipment_id', equipmentId)
-    .eq('user_id', user.id);
+    .eq('user_id', user.id)
+    .in('status', ['returned', 'cancelled']);
 
   if (clearError) {
     console.error('Error clearing equipment_id from orders:', clearError);
