@@ -75,7 +75,7 @@ function truncateLabel(name: string, max = 8) {
 function formatShortCurrency(value: number) {
   if (value >= 10000) return `${(value / 10000).toFixed(1)}万`;
   if (value >= 1000) return `${(value / 1000).toFixed(1)}k`;
-  return `${value}`;
+  return `${Math.round(value)}`;
 }
 
 export function EquipmentRevenueSeriesChart({
@@ -188,7 +188,7 @@ export function EquipmentRevenueSeriesChart({
           type="button"
           onClick={() => setFlipped((f) => !f)}
           aria-label={flipped ? '查看柱状图' : '查看订单明细'}
-          className="inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition hover:bg-slate-50 hover:text-slate-900"
+          className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md border border-border/70 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition hover:bg-slate-50 hover:text-slate-900 sm:min-h-0"
         >
           <ArrowLeftRight className="h-3.5 w-3.5" />
           {flipped ? '查看柱状图' : '查看明细'}
@@ -199,16 +199,18 @@ export function EquipmentRevenueSeriesChart({
         {!hasData ? (
           <EmptyState>当月与上月暂无设备数据</EmptyState>
         ) : (
-          <div className="relative min-h-[420px]" style={{ perspective: '1200px' }}>
+          <div className="relative h-[390px] sm:h-[440px]" style={{ perspective: '1200px' }}>
             <div
               className={cn(
-                'relative w-full transition-transform duration-500 [transform-style:preserve-3d]',
+                'relative h-full w-full transition-transform duration-500 [transform-style:preserve-3d]',
                 flipped && '[transform:rotateY(180deg)]',
+                reducedMotion && 'transition-none',
               )}
             >
               {/* FRONT — bar chart */}
               <div
                 className="w-full [backface-visibility:hidden]"
+                aria-hidden={flipped}
                 style={{ backfaceVisibility: 'hidden' }}
               >
                 <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs">
@@ -256,7 +258,7 @@ export function EquipmentRevenueSeriesChart({
                   >
                     <ChartContainer
                       config={CHART_CONFIG}
-                      className="h-[360px] min-h-[360px] w-full !aspect-auto"
+                      className="h-[280px] min-h-[280px] w-full !aspect-auto sm:h-[360px] sm:min-h-[360px]"
                       style={chartStyle}
                       initialDimension={initialDimension}
                     >
@@ -288,7 +290,7 @@ export function EquipmentRevenueSeriesChart({
                           tickFormatter={(v: number) => formatShortCurrency(Number(v))}
                           tick={{ fontSize: 10, fill: '#94a3b8' }}
                           width={48}
-                          domain={[0, maxValue * 1.15 || 1]}
+                          domain={[0, Math.ceil(maxValue * 1.15) || 1]}
                         />
                         <ChartTooltip
                           cursor={{ fill: '#f1f5f9', opacity: 0.6 }}
@@ -354,7 +356,10 @@ export function EquipmentRevenueSeriesChart({
 
               {/* BACK — orders table */}
               <div
-                className="absolute inset-0 z-10 [backface-visibility:hidden] [transform:rotateY(180deg)]"
+                className="absolute inset-0 z-10 overflow-y-auto overscroll-contain pr-1 [backface-visibility:hidden] [transform:rotateY(180deg)]"
+                aria-hidden={!flipped}
+                aria-label="单机营收订单明细"
+                tabIndex={flipped ? 0 : -1}
                 style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}
               >
                 <OrderList

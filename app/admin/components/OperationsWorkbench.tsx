@@ -228,10 +228,12 @@ export default function OperationsWorkbench({
   snapshot,
   equipment,
   orders,
+  initialScanOpen = false,
 }: {
   snapshot: OperationsSnapshot;
   equipment: Equipment[];
   orders: Order[];
+  initialScanOpen?: boolean;
 }) {
   const router = useRouter();
   const [filter, setFilter] = useState<TaskFilter>('all');
@@ -394,7 +396,7 @@ export default function OperationsWorkbench({
         title="今日运营工作台"
         description={`${snapshot.todayLabel}。系统已经把需要处理的发货、归还、逾期、排期和库存异常集中到这里。`}
         meta={
-          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-row">
             <SecondaryButton className="w-full sm:w-auto" onClick={() => setScanOpen(true)}>
               <ScanLine className="h-4 w-4" />扫码处理
             </SecondaryButton>
@@ -554,16 +556,17 @@ export default function OperationsWorkbench({
       </Dialog>
 
       <Dialog
-        open={scanOpen}
+        open={scanOpen || initialScanOpen}
         onOpenChange={(open) => {
           setScanOpen(open);
           if (!open) {
             stopCamera();
             setCameraError(null);
+            if (initialScanOpen) router.replace('/admin/operations', { scroll: false });
           }
         }}
       >
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="inset-0 left-0 top-0 h-dvh max-h-dvh max-w-none translate-x-0 translate-y-0 content-start overflow-y-auto rounded-none px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-[calc(1rem+env(safe-area-inset-top))] sm:left-1/2 sm:top-1/2 sm:h-auto sm:max-h-[calc(100dvh-2rem)] sm:max-w-lg sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl sm:p-4">
           <DialogHeader>
             <DialogTitle>扫码查找设备或订单</DialogTitle>
             <DialogDescription>

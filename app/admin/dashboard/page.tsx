@@ -23,8 +23,8 @@ function isSameMonth(date: Date | null, year: number, month: number) {
   return Boolean(date && date.getFullYear() === year && date.getMonth() === month);
 }
 
-function getOrderMonthDate(order: { start_date?: string | null; created_at?: string | null }) {
-  return parseDate(order.start_date) ?? parseDate(order.created_at);
+function getRentalStartDate(order: { start_date?: string | null }) {
+  return parseDate(order.start_date);
 }
 
 function isRevenueOrder(order: { status: string }) {
@@ -67,10 +67,10 @@ export default async function DashboardPage() {
   const monthLabel = `${currentYear} 年 ${currentMonth + 1} 月`;
 
   const monthlyOrders = orders.filter(
-    (order) => order.status !== 'cancelled' && isSameMonth(getOrderMonthDate(order), currentYear, currentMonth)
+    (order) => order.status !== 'cancelled' && isSameMonth(getRentalStartDate(order), currentYear, currentMonth)
   );
   const previousMonthOrders = orders.filter(
-    (order) => order.status !== 'cancelled' && isSameMonth(getOrderMonthDate(order), previousYear, previousMonth)
+    (order) => order.status !== 'cancelled' && isSameMonth(getRentalStartDate(order), previousYear, previousMonth)
   );
   const monthlyRevenueOrders = monthlyOrders.filter(isRevenueOrder);
   const previousMonthRevenueOrders = previousMonthOrders.filter(isRevenueOrder);
@@ -122,13 +122,13 @@ export default async function DashboardPage() {
     revenueMap.set(equipmentId, current);
   }
 
-  // 当年 12 个月营收折线图数据（按 start_date / created_at 落到月份桶）
+  // 当年 12 个月营收折线图数据（严格按租赁开始日期 start_date 落到月份桶）
   // 即使某月为 0 也保留点位（折线在底部仍可见）
   const monthlyRevenueByMonth: MonthlyRevenuePoint[] = (() => {
     const buckets = Array.from({ length: 12 }, () => ({ revenue: 0, orderCount: 0 }));
     for (const order of orders) {
       if (!isRevenueOrder(order)) continue;
-      const date = getOrderMonthDate(order);
+      const date = getRentalStartDate(order);
       if (!date) continue;
       if (date.getFullYear() !== currentYear) continue;
       const monthIdx = date.getMonth(); // 0..11
@@ -150,10 +150,10 @@ export default async function DashboardPage() {
       (previousRevenueMap.get(equipmentId) ?? 0) + Number(order.total_price || 0),
     );
   }
-  const inCurrentMonth = (order: { start_date?: string | null; created_at?: string | null }) =>
-    isSameMonth(getOrderMonthDate(order), currentYear, currentMonth);
-  const inPreviousMonth = (order: { start_date?: string | null; created_at?: string | null }) =>
-    isSameMonth(getOrderMonthDate(order), previousYear, previousMonth);
+  const inCurrentMonth = (order: { start_date?: string | null }) =>
+    isSameMonth(getRentalStartDate(order), currentYear, currentMonth);
+  const inPreviousMonth = (order: { start_date?: string | null }) =>
+    isSameMonth(getRentalStartDate(order), previousYear, previousMonth);
   const revenueSeries = equipment.map((item) => ({
     equipmentId: item.id,
     name: item.name,
@@ -184,17 +184,17 @@ export default async function DashboardPage() {
   const orderDelta = getDeltaText(monthlyOrderCount, previousMonthOrderCount, ' 单');
 
   return (
-    <div className="p-6 bg-muted/30 min-h-screen space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
+    <div className="min-h-screen space-y-4 bg-muted/30 p-0 sm:space-y-6 sm:p-6">
+      <div className="flex items-center justify-end gap-4 lg:justify-between">
+        <div className="hidden lg:block">
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-600">Dashboard</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] text-foreground sm:text-4xl">数据看板</h1>
+          <h1 className="mt-2 text-4xl font-semibold tracking-[-0.03em] text-foreground">数据看板</h1>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">从全局视角查看 {monthLabel} 的营业情况、设备状态与单机创收表现。</p>
         </div>
-        <StatBadge tone="slate">统计周期：{monthLabel}</StatBadge>
+        <StatBadge tone="slate" className="shrink-0">{monthLabel}</StatBadge>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 xl:gap-4">
         <Card>
           <CardContent className="pt-5">
             <div className="flex items-center gap-2.5">

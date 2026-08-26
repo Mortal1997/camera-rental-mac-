@@ -125,8 +125,8 @@ export default function FinanceDashboard({ initialReport }: FinanceDashboardProp
 
   const handleReset = () => {
     setError(null);
-    const defaultStart = new Date(today.getFullYear(), 0, 1);
-    const defaultEnd = new Date(today.getFullYear(), 11, 31);
+    const defaultStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    const defaultEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
     setDateRange({ from: defaultStart, to: defaultEnd });
 
     startTransition(async () => {
@@ -239,7 +239,7 @@ export default function FinanceDashboard({ initialReport }: FinanceDashboardProp
   const expensesInRange = report.expenses;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4 sm:gap-6">
       <PageHeader eyebrow="Finance Report" title="财务报表" description="按自定义时间范围查看已完成订单收入、月度汇总和回款明细。" />
 
       <FilterPanel className="xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
@@ -254,10 +254,10 @@ export default function FinanceDashboard({ initialReport }: FinanceDashboardProp
           </label>
         </div>
 
-        <div className="flex flex-wrap gap-3 xl:self-end">
-          <PrimaryButton onClick={handleQuery} disabled={isPending}><Search className="h-4 w-4" />{isPending ? '查询中...' : '查询'}</PrimaryButton>
-          <SecondaryButton onClick={handleReset} disabled={isPending}><RefreshCw className="h-4 w-4" />重置</SecondaryButton>
-          <SecondaryButton onClick={handleExport} disabled={exporting || isPending}>
+        <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:gap-3 xl:self-end">
+          <PrimaryButton className="px-2 text-xs sm:px-4 sm:text-sm" onClick={handleQuery} disabled={isPending}><Search className="h-4 w-4" />{isPending ? '查询中...' : '查询'}</PrimaryButton>
+          <SecondaryButton className="px-2 text-xs sm:px-4 sm:text-sm" onClick={handleReset} disabled={isPending}><RefreshCw className="h-4 w-4" />重置</SecondaryButton>
+          <SecondaryButton className="px-2 text-xs sm:px-4 sm:text-sm" onClick={handleExport} disabled={exporting || isPending}>
             <Download className="h-4 w-4" />
             {exporting ? '导出中...' : '导出 Excel'}
           </SecondaryButton>
@@ -362,7 +362,38 @@ export default function FinanceDashboard({ initialReport }: FinanceDashboardProp
           {expenseError ? <div className="md:col-span-12 rounded-[14px] border border-rose-200/80 bg-rose-50/80 px-3 py-2 text-[13px] text-rose-600">{expenseError}</div> : null}
         </form>
 
-        <div className="mt-6">
+        <div className="mt-4 grid gap-2.5 md:grid-cols-2 lg:hidden">
+          {expensesInRange.length === 0 ? (
+            <div className="md:col-span-2">
+              <EmptyState>当前区间暂无成本记录</EmptyState>
+            </div>
+          ) : (
+            expensesInRange.map((expense: ExpenseItem) => (
+              <article key={expense.id} className="rounded-2xl border border-border/70 bg-card p-3.5 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-semibold text-foreground">{formatMonthLabel(expense.month)}</p>
+                      <StatBadge tone="amber">{CATEGORY_LABEL.get(expense.category) ?? expense.category}</StatBadge>
+                    </div>
+                    <p className="mt-1.5 truncate text-xs text-muted-foreground">{expense.note || '无备注'}</p>
+                  </div>
+                  <p className="shrink-0 font-mono text-base font-semibold tabular-nums text-amber-700">{formatCurrency(expense.amount)}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteExpense(expense.id)}
+                  className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-border/70 text-sm font-medium text-muted-foreground transition-colors hover:bg-rose-50 hover:text-rose-700"
+                  aria-label={`删除 ${formatMonthLabel(expense.month)} ${CATEGORY_LABEL.get(expense.category) ?? expense.category} 成本`}
+                >
+                  <Trash2 className="h-4 w-4" />删除记录
+                </button>
+              </article>
+            ))
+          )}
+        </div>
+
+        <div className="hidden lg:block">
           <TableShell>
             {expensesInRange.length === 0 ? (
               <EmptyState>当前区间暂无成本记录</EmptyState>
@@ -408,7 +439,7 @@ export default function FinanceDashboard({ initialReport }: FinanceDashboardProp
       </SurfaceCard>
 
       <SurfaceCard>
-        <SectionHeader title="按月汇总" description="按订单开始时间聚合已完成订单收入与数量。" meta={`${report.monthlySummary.length} 个自然月`} />
+        <SectionHeader title="按月汇总" description="按订单完结日期聚合已归还订单的收入与数量。" meta={`${report.monthlySummary.length} 个自然月`} />
         <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {report.monthlySummary.length === 0 ? (
             <EmptyState>暂无数据</EmptyState>
@@ -447,7 +478,31 @@ export default function FinanceDashboard({ initialReport }: FinanceDashboardProp
 
       <SurfaceCard>
         <SectionHeader title="流水明细" description="展示所选区间内全部已完成订单的财务入账明细。" meta={`共 ${report.orders.length} 条`} />
-        <TableShell>
+        <div className="mt-4 grid gap-2.5 md:grid-cols-2 lg:hidden">
+          {report.orders.length === 0 ? (
+            <div className="md:col-span-2">
+              <EmptyState>当前筛选区间暂无已完成订单</EmptyState>
+            </div>
+          ) : (
+            report.orders.map((order) => (
+              <article key={order.id} className="rounded-2xl border border-border/70 bg-card p-3.5 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-foreground">{order.equipment?.name || '未知设备'}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{order.customer_name || '匿名客户'} · {order.end_date || '日期未填写'}</p>
+                  </div>
+                  <p className="shrink-0 font-mono text-base font-semibold tabular-nums text-foreground">{formatCurrency(Number(order.total_price || 0))}</p>
+                </div>
+                <div className="mt-3 flex items-center justify-between rounded-xl bg-muted/55 px-3 py-2 text-xs text-muted-foreground">
+                  <span>免押方式</span>
+                  <span className="font-medium text-foreground">{order.deposit_exemption || '—'}</span>
+                </div>
+              </article>
+            ))
+          )}
+        </div>
+        <div className="hidden lg:block">
+          <TableShell>
           {report.orders.length === 0 ? (
             <EmptyState>当前筛选区间暂无已完成订单</EmptyState>
           ) : (
@@ -474,7 +529,8 @@ export default function FinanceDashboard({ initialReport }: FinanceDashboardProp
               </tbody>
             </table>
           )}
-        </TableShell>
+          </TableShell>
+        </div>
       </SurfaceCard>
     </div>
   );

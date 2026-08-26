@@ -1,5 +1,5 @@
 import './globals.css';
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { TooltipProvider } from "@/components/ui/tooltip";
 import PwaRegistration from '@/components/PwaRegistration';
 
@@ -13,6 +13,13 @@ export const metadata: Metadata = {
     title: 'BANG BANG',
     statusBarStyle: 'default',
   },
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: '#f8fafc',
 };
 
 export default function RootLayout({

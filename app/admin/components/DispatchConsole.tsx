@@ -263,7 +263,7 @@ function DispatchOrderCard({
   return (
     <article
       className={cn(
-        'flex h-full flex-col rounded-2xl border border-gray-200/80 bg-white p-6 shadow-sm transition-all duration-200 hover:scale-[0.98] hover:shadow-md active:scale-[0.97]',
+        'flex h-full flex-col rounded-2xl border border-gray-200/80 bg-white p-4 shadow-sm transition-all duration-200 hover:scale-[0.98] hover:shadow-md active:scale-[0.97] sm:p-6',
         isHighlighted && 'border-indigo-300 ring-2 ring-indigo-200/70'
       )}
     >
@@ -291,7 +291,7 @@ function DispatchOrderCard({
           </div>
         </div>
 
-        <div className="mt-6 grid grid-cols-2 gap-4">
+        <div className="mt-4 grid grid-cols-2 gap-4 sm:mt-6">
           <OrderDataField label="租期" value={formatDateRange(order.start_date, order.end_date)} />
           <OrderDataField
             label="设备"
@@ -318,7 +318,7 @@ function DispatchOrderCard({
         <p className="mt-3 truncate text-xs font-medium text-gray-400">{order.external_order_id || `内部单号 ${order.id}`}</p>
       </button>
 
-      <div className="mt-6 space-y-3">
+      <div className="mt-4 space-y-3 sm:mt-6">
         <PrimaryButton className="w-full justify-center" onClick={() => onOpen(order)} disabled={isPending}>
           <PackageCheck className="h-4 w-4" />编辑并接单
         </PrimaryButton>
@@ -327,7 +327,7 @@ function DispatchOrderCard({
             type="button"
             onClick={() => onDelete(order.id)}
             disabled={isPending}
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-rose-400 transition-all duration-200 hover:text-rose-500 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex min-h-11 items-center gap-1.5 px-3 text-sm font-medium text-rose-400 transition-all duration-200 hover:text-rose-500 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 sm:min-h-0 sm:px-0"
           >
             <Trash2 className="h-3.5 w-3.5" />删除
           </button>
@@ -574,12 +574,12 @@ export default function DispatchConsole({ orders, equipmentList, activeOrders, h
       <SurfaceCard className="bg-slate-50 shadow-none">
         <SectionHeader
           title="待调度订单"
-          description="点击卡片或下方按钮打开右侧调度抽屉，可连续编辑租期、收货地址、发货方式、免押方式和设备分配。"
+          description="点击订单卡片即可进入调度并完成设备分配。"
           meta={(
-            <div className="flex flex-col items-start gap-3 sm:items-end">
+            <div className="flex flex-col items-start gap-2 sm:items-end sm:gap-3">
               <span className="text-sm text-slate-500">{filteredOrders.length} / {orders.length} 单</span>
               <span className={`text-xs ${refreshStatusClassName}`}>{refreshStatusLabel}</span>
-              <span className="text-xs text-slate-400">上次刷新：{formatRefreshTime(lastRefreshedAt)}</span>
+              <span className="hidden text-xs text-slate-400 sm:inline">上次刷新：{formatRefreshTime(lastRefreshedAt)}</span>
               <SyncOrdersButton />
             </div>
           )}
@@ -589,9 +589,9 @@ export default function DispatchConsole({ orders, equipmentList, activeOrders, h
           <div className="mt-5 rounded-[20px] border border-rose-200/80 bg-rose-50/80 px-4 py-3 text-sm text-rose-600">{formError}</div>
         ) : null}
 
-        <FilterPanel className="xl:grid-cols-[minmax(0,1.3fr)_auto] xl:items-end">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
+        <FilterPanel className="md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-2 md:gap-4">
+            <div className="col-span-2 md:col-span-1">
               <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">搜索</p>
               <TextInput
                 value={searchTerm}
@@ -608,8 +608,13 @@ export default function DispatchConsole({ orders, equipmentList, activeOrders, h
                 ))}
               </SelectInput>
             </div>
+            <div className="flex items-end md:hidden">
+              <SecondaryButton className="w-full" onClick={resetFilters}>
+                <RotateCcw className="h-4 w-4" />重置
+              </SecondaryButton>
+            </div>
           </div>
-          <div className="xl:self-end">
+          <div className="hidden md:block md:self-end">
             <SecondaryButton onClick={resetFilters}>
               <RotateCcw className="h-4 w-4" />重置
             </SecondaryButton>
@@ -625,7 +630,7 @@ export default function DispatchConsole({ orders, equipmentList, activeOrders, h
             </EmptyState>
           </div>
         ) : (
-          <div className="mt-8 grid gap-6 md:grid-cols-2 2xl:grid-cols-3">
+          <div className="mt-4 grid gap-4 sm:mt-8 sm:gap-6 md:grid-cols-2 2xl:grid-cols-3">
             {filteredOrders.map((order) => (
               <DispatchOrderCard
                 key={order.id}

@@ -23,15 +23,12 @@ export function PageHeader({
   meta?: ReactNode;
 }) {
   return (
-    <div className={cn(cardSurface, 'p-4 sm:p-7 lg:p-8')}>
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-700 sm:text-xs">{eyebrow}</p>
-        {meta ? <div className="hidden shrink-0 sm:block lg:hidden">{meta}</div> : null}
-      </div>
-      <div className="mt-2 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between sm:mt-3">
-        <div className="min-w-0">
-          <h1 className="text-xl font-semibold tracking-[-0.03em] text-foreground sm:text-3xl lg:text-4xl">{title}</h1>
-          <p className="mt-1.5 max-w-3xl text-[13px] leading-5 text-muted-foreground sm:mt-2 sm:text-sm sm:leading-6">{description}</p>
+    <div className={cn(meta ? 'block' : 'hidden lg:block', 'border-0 bg-transparent p-0 shadow-none lg:rounded-3xl lg:border lg:border-border/70 lg:bg-card lg:p-8 lg:shadow-sm')}>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div className="hidden min-w-0 lg:block">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700">{eyebrow}</p>
+          <h1 className="mt-3 text-3xl font-semibold tracking-[-0.03em] text-foreground lg:text-4xl">{title}</h1>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p>
         </div>
         {meta ? <div className="w-full lg:w-auto">{meta}</div> : null}
       </div>

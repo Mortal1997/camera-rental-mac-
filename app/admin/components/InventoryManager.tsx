@@ -367,7 +367,11 @@ export default function InventoryManager({ equipment }: InventoryManagerProps) {
   return (
     <>
       {successMsg && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl bg-white px-5 py-3.5 text-sm font-medium text-slate-900 shadow-lg">
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-20 left-3 right-3 z-50 flex items-center justify-center gap-3 rounded-2xl bg-white px-4 py-3 text-sm font-medium text-slate-900 shadow-lg sm:bottom-6 sm:left-auto sm:right-6 sm:justify-start sm:px-5 sm:py-3.5"
+        >
           <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white">
             <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" className="h-3 w-3">
               <polyline points="2,6 5,9 10,3" />
@@ -378,13 +382,13 @@ export default function InventoryManager({ equipment }: InventoryManagerProps) {
       )}
 
       <SurfaceCard className="overflow-hidden p-0">
-        <div className="border-b border-slate-100 px-4 py-4 sm:px-6 sm:py-5">
+        <div className="border-b border-slate-100 px-3 py-3 sm:px-6 sm:py-5">
           <SectionHeader
             title="设备列表"
             description="管理设备资产与状态。"
             meta={
-              <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
-                <StatBadge tone="slate">{equipment.length} 台</StatBadge>
+              <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:gap-3">
+                <StatBadge tone="slate" className="col-span-3 w-fit shrink-0 sm:col-auto">{equipment.length} 台</StatBadge>
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -392,14 +396,31 @@ export default function InventoryManager({ equipment }: InventoryManagerProps) {
                   className="hidden"
                   onChange={handleExcelSelect}
                 />
-                <SecondaryButton onClick={downloadTemplate} disabled={isPending}>
-                  <Download className="h-4 w-4" />下载模板
+                <SecondaryButton
+                  onClick={downloadTemplate}
+                  disabled={isPending}
+                  className="col-start-2 row-start-2 w-full !min-h-11 !px-2 !py-2 sm:col-auto sm:row-auto sm:w-auto sm:!px-4 sm:!py-2.5"
+                >
+                  <Download className="h-4 w-4" />
+                  <span className="sm:hidden">模板</span>
+                  <span className="hidden sm:inline">下载模板</span>
                 </SecondaryButton>
-                <SecondaryButton onClick={() => fileInputRef.current?.click()} disabled={isPending}>
-                  <FileSpreadsheet className="h-4 w-4" />批量导入 (Excel)
+                <SecondaryButton
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isPending}
+                  className="col-start-3 row-start-2 w-full !min-h-11 !px-2 !py-2 sm:col-auto sm:row-auto sm:w-auto sm:!px-4 sm:!py-2.5"
+                >
+                  <FileSpreadsheet className="h-4 w-4" />
+                  <span className="sm:hidden">导入</span>
+                  <span className="hidden sm:inline">批量导入 (Excel)</span>
                 </SecondaryButton>
-                <PrimaryButton onClick={() => setIsModalOpen(true)}>
-                  <Plus className="h-4 w-4" />创建库存
+                <PrimaryButton
+                  onClick={() => setIsModalOpen(true)}
+                  className="col-start-1 row-start-2 w-full !min-h-11 !px-2 !py-2 sm:col-auto sm:row-auto sm:w-auto sm:!px-4 sm:!py-2.5"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span className="sm:hidden">新增</span>
+                  <span className="hidden sm:inline">创建库存</span>
                 </PrimaryButton>
               </div>
             }
@@ -409,58 +430,142 @@ export default function InventoryManager({ equipment }: InventoryManagerProps) {
           ) : null}
         </div>
 
-        <div className="px-4 pb-4 pt-4 sm:px-6 sm:pb-6">
-          <TableShell>
+        <div className="px-3 pb-3 pt-2 sm:px-6 sm:pb-6 sm:pt-4">
+          <div className="lg:hidden">
             {equipment.length === 0 ? (
               <EmptyState>暂无设备，请点击右上角「+ 创建库存」添加</EmptyState>
             ) : (
-              <table className="w-full min-w-[820px] text-sm">
-                <TableHead>
-                  <tr>
-                    <Th>设备名称</Th>
-                    <Th className="hidden sm:table-cell">型号 / 分类</Th>
-                    <Th className="hidden sm:table-cell">SN号</Th>
-                    <Th>日租金</Th>
-                    <Th className="hidden lg:table-cell">押金</Th>
-                    <Th>状态</Th>
-                    <Th className="hidden lg:table-cell">质保到期</Th>
-                    <Th>操作</Th>
-                  </tr>
-                </TableHead>
-                <tbody>
-                  {equipment.map((eq) => {
-                    const cfg = statusConfig[eq.status] ?? statusConfig.available;
-                    return (
-                      <Tr key={eq.id}>
-                        <Td className="font-medium text-slate-900">{eq.name}</Td>
-                        <Td className="hidden sm:table-cell">{eq.category || '—'}</Td>
-                        <Td className="hidden sm:table-cell font-mono text-xs text-slate-500">{eq.serial_number || '—'}</Td>
-                        <Td className="font-semibold text-slate-900">¥{Number(eq.daily_fee).toFixed(2)}</Td>
-                        <Td className="hidden lg:table-cell font-semibold text-slate-900">¥{Number(eq.deposit).toFixed(2)}</Td>
-                        <Td>
-                          <StatBadge tone={cfg.tone} dot>{cfg.label}</StatBadge>
-                        </Td>
-                        <Td className="hidden lg:table-cell">{eq.warranty_expire_date || '—'}</Td>
-                        <Td>
-                          <div className="flex items-center gap-2">
-                            <SecondaryButton onClick={() => openEditModal(eq)} className="text-xs !py-1.5">
-                              <Pencil className="h-3 w-3" />编辑
-                            </SecondaryButton>
-                            <SecondaryButton onClick={() => handleToggleStatus(eq)} disabled={isPending} className="text-xs !py-1.5">
-                              <Wrench className="h-3 w-3" />{eq.status === 'available' ? '报修' : '恢复'}
-                            </SecondaryButton>
-                            <DangerButton onClick={() => setDeleteDialogEquipment(eq)} disabled={isPending} className="text-xs !py-1.5">
-                              <Trash2 className="h-3 w-3" />删除
-                            </DangerButton>
-                          </div>
-                        </Td>
-                      </Tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              <div className="grid gap-2.5 md:grid-cols-2">
+                {equipment.map((eq) => {
+                  const cfg = statusConfig[eq.status] ?? statusConfig.available;
+                  const nameId = `mobile-equipment-${eq.id}`;
+
+                  return (
+                    <article
+                      key={eq.id}
+                      aria-labelledby={nameId}
+                      className="rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h3 id={nameId} className="break-words text-[15px] font-semibold leading-5 text-slate-900">
+                            {eq.name}
+                          </h3>
+                          <p className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] leading-4 text-slate-500">
+                            <span>{eq.category || '未分类'}</span>
+                            <span aria-hidden="true" className="text-slate-300">·</span>
+                            <span className="font-mono">{eq.serial_number ? `SN ${eq.serial_number}` : '未录入 SN'}</span>
+                          </p>
+                        </div>
+                        <StatBadge tone={cfg.tone} dot className="shrink-0">
+                          {cfg.label}
+                        </StatBadge>
+                      </div>
+
+                      <dl className="mt-2.5 grid grid-cols-2 gap-2 rounded-xl bg-slate-50/90 p-2.5">
+                        <div>
+                          <dt className="text-[10px] text-slate-500">日租金</dt>
+                          <dd className="mt-0.5 text-sm font-semibold text-slate-900">¥{Number(eq.daily_fee).toFixed(2)}<span className="ml-0.5 text-[10px] font-normal text-slate-500">/ 天</span></dd>
+                        </div>
+                        <div>
+                          <dt className="text-[10px] text-slate-500">押金</dt>
+                          <dd className="mt-0.5 text-sm font-semibold text-slate-900">¥{Number(eq.deposit).toFixed(2)}</dd>
+                        </div>
+                        <div className="col-span-2 border-t border-slate-200/70 pt-2">
+                          <dt className="inline text-[10px] text-slate-500">质保到期：</dt>
+                          <dd className="inline text-xs text-slate-700">
+                            {eq.warranty_expire_date ? (
+                              <time dateTime={eq.warranty_expire_date}>{eq.warranty_expire_date}</time>
+                            ) : '未登记'}
+                          </dd>
+                        </div>
+                      </dl>
+
+                      <div role="group" className="mt-2.5 grid grid-cols-3 gap-2" aria-label={`${eq.name} 操作`}>
+                        <SecondaryButton
+                          onClick={() => openEditModal(eq)}
+                          className="w-full !min-h-11 !gap-1 !px-1 !py-2 text-xs whitespace-nowrap"
+                          aria-label={`编辑${eq.name}`}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />编辑
+                        </SecondaryButton>
+                        <SecondaryButton
+                          onClick={() => handleToggleStatus(eq)}
+                          disabled={isPending}
+                          className="w-full !min-h-11 !gap-1 !px-1 !py-2 text-xs whitespace-nowrap"
+                          aria-label={`${eq.status === 'available' ? '报修' : '恢复'}${eq.name}`}
+                        >
+                          <Wrench className="h-3.5 w-3.5" />{eq.status === 'available' ? '报修' : '恢复'}
+                        </SecondaryButton>
+                        <DangerButton
+                          onClick={() => setDeleteDialogEquipment(eq)}
+                          disabled={isPending}
+                          className="w-full !min-h-11 !gap-1 !px-1 !py-2 text-xs whitespace-nowrap"
+                          aria-label={`删除${eq.name}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />删除
+                        </DangerButton>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
             )}
-          </TableShell>
+          </div>
+
+          <div className="hidden lg:block">
+            <TableShell>
+              {equipment.length === 0 ? (
+                <EmptyState>暂无设备，请点击右上角「+ 创建库存」添加</EmptyState>
+              ) : (
+                <table className="w-full min-w-[820px] text-sm">
+                  <TableHead>
+                    <tr>
+                      <Th>设备名称</Th>
+                      <Th className="hidden sm:table-cell">型号 / 分类</Th>
+                      <Th className="hidden sm:table-cell">SN号</Th>
+                      <Th>日租金</Th>
+                      <Th className="hidden lg:table-cell">押金</Th>
+                      <Th>状态</Th>
+                      <Th className="hidden lg:table-cell">质保到期</Th>
+                      <Th>操作</Th>
+                    </tr>
+                  </TableHead>
+                  <tbody>
+                    {equipment.map((eq) => {
+                      const cfg = statusConfig[eq.status] ?? statusConfig.available;
+                      return (
+                        <Tr key={eq.id}>
+                          <Td className="font-medium text-slate-900">{eq.name}</Td>
+                          <Td className="hidden sm:table-cell">{eq.category || '—'}</Td>
+                          <Td className="hidden sm:table-cell font-mono text-xs text-slate-500">{eq.serial_number || '—'}</Td>
+                          <Td className="font-semibold text-slate-900">¥{Number(eq.daily_fee).toFixed(2)}</Td>
+                          <Td className="hidden lg:table-cell font-semibold text-slate-900">¥{Number(eq.deposit).toFixed(2)}</Td>
+                          <Td>
+                            <StatBadge tone={cfg.tone} dot>{cfg.label}</StatBadge>
+                          </Td>
+                          <Td className="hidden lg:table-cell">{eq.warranty_expire_date || '—'}</Td>
+                          <Td>
+                            <div className="flex items-center gap-2">
+                              <SecondaryButton onClick={() => openEditModal(eq)} className="text-xs !py-1.5">
+                                <Pencil className="h-3 w-3" />编辑
+                              </SecondaryButton>
+                              <SecondaryButton onClick={() => handleToggleStatus(eq)} disabled={isPending} className="text-xs !py-1.5">
+                                <Wrench className="h-3 w-3" />{eq.status === 'available' ? '报修' : '恢复'}
+                              </SecondaryButton>
+                              <DangerButton onClick={() => setDeleteDialogEquipment(eq)} disabled={isPending} className="text-xs !py-1.5">
+                                <Trash2 className="h-3 w-3" />删除
+                              </DangerButton>
+                            </div>
+                          </Td>
+                        </Tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </TableShell>
+          </div>
         </div>
       </SurfaceCard>
 

@@ -36,9 +36,12 @@ export type EquipmentMonthlyRentPoint = {
 function getDefaultRange() {
   const now = new Date();
   const year = now.getFullYear();
+  const month = now.getMonth();
+  const monthNumber = String(month + 1).padStart(2, '0');
+  const lastDay = new Date(year, month + 1, 0).getDate();
   return {
-    startDate: `${year}-01-01`,
-    endDate: `${year}-12-31`,
+    startDate: `${year}-${monthNumber}-01`,
+    endDate: `${year}-${monthNumber}-${String(lastDay).padStart(2, '0')}`,
   };
 }
 
@@ -75,7 +78,9 @@ export async function getFinancialReport(
     .eq('status', 'returned')
     .order('end_date', { ascending: false });
 
-  query = query.gte('start_date', rangeStart).lte('end_date', rangeEnd);
+  // 财务以订单完结（归还）日期入账：只要 end_date 落入所选区间即可，
+  // 不要求租赁开始日期也位于同一时间范围内。
+  query = query.gte('end_date', rangeStart).lte('end_date', rangeEnd);
 
   const { data, error } = await query;
 
@@ -89,7 +94,8 @@ export async function getFinancialReport(
 
   const monthlyMap = new Map<string, FinancialMonthlySummary>();
   for (const order of orders) {
-    const month = formatMonthKey(order.start_date ?? order.end_date ?? new Date().toISOString().slice(0, 10));
+    if (!order.end_date) continue;
+    const month = formatMonthKey(order.end_date);
     const current = monthlyMap.get(month) ?? {
       month,
       orderCount: 0,
@@ -149,7 +155,7 @@ export async function getFinancialReport(
 
     const totalPrice = Number(order.total_price || 0);
 
-    const month = formatMonthKey(order.start_date ?? order.end_date ?? new Date().toISOString().slice(0, 10));
+    const month = formatMonthKey(order.end_date);
     const key = `${category}|${month}`;
 
     const existing = categoryRentMap.get(key) ?? { totalRent: 0, totalDays: 0 };

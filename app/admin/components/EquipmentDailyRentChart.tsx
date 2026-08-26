@@ -82,7 +82,7 @@ export function EquipmentDailyRentChart({ data, startMonth, endMonth }: Equipmen
   const hasData = chartData.length > 0 && categories.length > 0;
 
   return (
-    <Card className="flex h-full min-h-[440px] flex-col overflow-hidden">
+    <Card className="flex h-full min-h-[360px] flex-col overflow-hidden sm:min-h-[440px]">
       <CardHeader>
         <CardTitle>分类日租金均值趋势</CardTitle>
         <CardDescription>
@@ -94,7 +94,7 @@ export function EquipmentDailyRentChart({ data, startMonth, endMonth }: Equipmen
         {!hasData ? (
           <EmptyState>所选区间暂无数据</EmptyState>
         ) : (
-          <div className="h-[360px] w-full">
+          <div className="h-[260px] w-full sm:h-[360px]">
             <ChartContainer config={chartConfig} className="h-full w-full">
               <LineChart
                 data={chartData}

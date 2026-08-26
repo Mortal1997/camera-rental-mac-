@@ -60,7 +60,89 @@ export default function CompletedOrders({ orders }: CompletedOrdersProps) {
         <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div>
       ) : null}
 
-      <TableShell>
+      <div className="mt-4 lg:hidden">
+        {displayOrders.length === 0 ? (
+          <EmptyState>暂无已完成订单</EmptyState>
+        ) : (
+          <div className="grid gap-2.5 md:grid-cols-2">
+            {displayOrders.map((order) => {
+              const titleId = `completed-order-${order.id}`;
+              const equipmentName = order.equipment?.name ?? order.expected_equipment_model ?? '未绑定设备';
+
+              return (
+                <article
+                  key={order.id}
+                  aria-labelledby={titleId}
+                  className="rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-sm"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 id={titleId} className="break-words text-[15px] font-semibold leading-5 text-slate-900">
+                        {equipmentName}
+                      </h3>
+                      <p className="mt-1 break-all font-mono text-[11px] leading-4 text-slate-400">
+                        {order.equipment?.serial_number ? `SN ${order.equipment.serial_number}` : '未录入 SN'}
+                      </p>
+                    </div>
+                    {order.status === 'cancelled' ? (
+                      <span className="inline-flex shrink-0 items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500">
+                        已取消
+                      </span>
+                    ) : (
+                      <span className="inline-flex shrink-0 items-center rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700">
+                        已完成
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="mt-2.5 flex min-w-0 items-center gap-2 text-xs">
+                    <span className="inline-flex shrink-0 items-center rounded-full bg-slate-100 px-2.5 py-1 font-medium text-slate-700">
+                      {order.platform_source || '手动录单'}
+                    </span>
+                    <span className="min-w-0 truncate text-slate-500" title={order.external_order_id || order.id}>
+                      {order.external_order_id || `内部单号：${order.id}`}
+                    </span>
+                  </div>
+
+                  <dl className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2 rounded-xl bg-slate-50/90 p-2.5">
+                    <div className="min-w-0">
+                      <dt className="text-[10px] text-slate-500">客户</dt>
+                      <dd className="mt-0.5 truncate text-sm font-medium text-slate-900">{order.customer_name ?? '—'}</dd>
+                      <dd className="mt-0.5 break-all text-xs text-slate-500">{order.customer_phone ?? '—'}</dd>
+                    </div>
+                    <div className="min-w-0 text-right">
+                      <dt className="text-[10px] text-slate-500">订单金额</dt>
+                      <dd className={`mt-0.5 text-sm font-semibold ${order.status === 'cancelled' ? 'text-slate-500' : 'text-emerald-600'}`}>
+                        {formatCurrency(order.total_price)}
+                      </dd>
+                      {order.status === 'cancelled' ? (
+                        <dd className="mt-0.5 text-[10px] text-slate-500">不计入财务报表</dd>
+                      ) : null}
+                    </div>
+                    <div className="col-span-2 border-t border-slate-200/70 pt-2">
+                      <dt className="inline text-[10px] text-slate-500">租用时段：</dt>
+                      <dd className="inline text-xs text-slate-700">{formatDateRange(order.start_date, order.end_date)}</dd>
+                    </div>
+                  </dl>
+
+                  <button
+                    type="button"
+                    className="mt-2.5 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-red-100 bg-red-50 px-4 py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-100 hover:text-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    onClick={() => setDeleteDialogOrderId(order.id)}
+                    disabled={isPending}
+                    aria-label={`删除${equipmentName}订单`}
+                  >
+                    <Trash2 className="h-4 w-4" />删除订单
+                  </button>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="hidden lg:block">
+        <TableShell>
         {displayOrders.length === 0 ? (
           <EmptyState>暂无已完成订单</EmptyState>
         ) : (
@@ -141,7 +223,8 @@ export default function CompletedOrders({ orders }: CompletedOrdersProps) {
             </tbody>
           </table>
         )}
-      </TableShell>
+        </TableShell>
+      </div>
     </SurfaceCard>
 
     <Dialog open={deleteDialogOrderId !== null} onOpenChange={(open) => !open && setDeleteDialogOrderId(null)}>

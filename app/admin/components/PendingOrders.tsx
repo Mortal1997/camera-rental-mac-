@@ -632,8 +632,8 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
           title="待发货订单"
           description="录入物流单号后即可发货。"
           meta={
-            <div className="flex flex-wrap items-center gap-2.5">
-              <StatBadge tone="slate">{displayOrders.length} 单</StatBadge>
+            <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:gap-2.5">
+              <StatBadge tone="slate" className="col-span-3 w-fit sm:col-auto">{displayOrders.length} 单</StatBadge>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -641,14 +641,20 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
                 className="hidden"
                 onChange={handleExcelSelect}
               />
-              <SecondaryButton onClick={downloadTemplate} disabled={isPending}>
-                <Download className="h-4 w-4" />下载模板
+              <SecondaryButton className="col-start-2 row-start-2 w-full !gap-1 !px-1 whitespace-nowrap sm:col-auto sm:row-auto sm:w-auto sm:!gap-2 sm:!px-4" onClick={downloadTemplate} disabled={isPending}>
+                <Download className="h-4 w-4" />
+                <span className="sm:hidden">模板</span>
+                <span className="hidden sm:inline">下载模板</span>
               </SecondaryButton>
-              <SecondaryButton onClick={() => fileInputRef.current?.click()} disabled={isPending}>
-                <FileSpreadsheet className="h-4 w-4" />批量导入 (Excel)
+              <SecondaryButton className="col-start-3 row-start-2 w-full !gap-1 !px-1 whitespace-nowrap sm:col-auto sm:row-auto sm:w-auto sm:!gap-2 sm:!px-4" onClick={() => fileInputRef.current?.click()} disabled={isPending}>
+                <FileSpreadsheet className="h-4 w-4" />
+                <span className="sm:hidden">导入</span>
+                <span className="hidden sm:inline">批量导入 (Excel)</span>
               </SecondaryButton>
-              <PrimaryButton onClick={() => setIsModalOpen(true)}>
-                <Plus className="h-4 w-4" />手动创建订单
+              <PrimaryButton className="col-start-1 row-start-2 w-full !gap-1 !px-1 whitespace-nowrap sm:col-auto sm:row-auto sm:w-auto sm:!gap-2 sm:!px-4" onClick={() => setIsModalOpen(true)}>
+                <Plus className="h-4 w-4" />
+                <span className="sm:hidden">新建</span>
+                <span className="hidden sm:inline">手动创建订单</span>
               </PrimaryButton>
             </div>
           }
@@ -786,7 +792,7 @@ export default function PendingOrders({ orders, equipmentList }: PendingOrdersPr
                             key={opt.value}
                             type="button"
                             onClick={() => setShipMethodInputs((prev) => ({ ...prev, [order.id]: opt.value }))}
-                            className={`rounded px-2 py-1 text-xs transition ${
+                            className={`min-h-11 rounded px-2 py-1 text-xs transition sm:min-h-0 ${
                               active
                                 ? 'bg-indigo-600 text-white'
                                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'

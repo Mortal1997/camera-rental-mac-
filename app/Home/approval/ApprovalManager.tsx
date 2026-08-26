@@ -369,8 +369,8 @@ export default function ApprovalManager({ initialData }: { initialData: Approval
   ];
 
   return (
-    <div className="space-y-6">
-      <div>
+    <div className="space-y-4 sm:space-y-6">
+      <div className="hidden lg:block">
         <h1 className="text-2xl font-bold tracking-tight">注册审核</h1>
         <p className="text-sm text-muted-foreground mt-1">
           管理用户注册申请、账户及操作日志

@@ -1,6 +1,7 @@
 import type { Equipment, EquipmentWithOrders, Order } from '@/app/actions/types';
 import { getEffectiveEquipmentStatus } from '@/lib/equipment-status';
 import { orderConflictsWithRange } from '@/lib/order-scheduling';
+import { getShippingLeadDays } from '@/lib/shipping-method';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -56,6 +57,11 @@ function formatDate(value?: string | null): string {
   if (!value) return '日期待补充';
   const [, month, day] = value.slice(0, 10).split('-');
   return `${Number(month)}月${Number(day)}日`;
+}
+
+function formatDateKey(dateKey: number): string {
+  const date = new Date(dateKey * DAY_MS);
+  return `${date.getUTCMonth() + 1}月${date.getUTCDate()}日`;
 }
 
 function normalizeModel(value?: string | null): string {
@@ -238,16 +244,24 @@ export function buildOperationsSnapshot(
     }
 
     if ((order.status === 'pending_payment' || order.status === 'confirmed') && order.equipment_id && startKey !== null) {
-      const daysUntilShip = startKey - todayKey;
+      const shippingLeadDays = getShippingLeadDays(order.shipping_method);
+      const shippingDateKey = startKey - shippingLeadDays;
+      const daysUntilShip = shippingDateKey - todayKey;
+      const shippingRuleDescription = shippingLeadDays === 2
+        ? '邮寄或待确认订单按租期开始前 2 天发货。'
+        : '跑腿、闪送或自提订单按租期开始前 1 天交付。';
+
       if (daysUntilShip < 0) {
         addOrderTask(
           tasks,
           order,
           'urgent',
           'late-shipment',
-          '已到租期仍未发货',
-          order.status === 'pending_payment' ? '订单仍待付款，请先确认收款状态。' : '订单已确认，需要立即处理发货。',
-          `${formatDate(order.start_date)} 开始`,
+          `已超过应发货日 ${Math.abs(daysUntilShip)} 天`,
+          order.status === 'pending_payment'
+            ? `订单仍待付款，请先确认收款状态。${shippingRuleDescription}`
+            : `订单已确认，需要立即处理发货。${shippingRuleDescription}`,
+          `应于 ${formatDateKey(shippingDateKey)} 发货`,
           equipmentMap,
         );
       } else if (daysUntilShip === 0) {
@@ -257,8 +271,10 @@ export function buildOperationsSnapshot(
           'today',
           'ship-today',
           '今日需要发货',
-          order.status === 'pending_payment' ? '尚未确认付款，发货前请核实款项。' : '设备已分配，可进入待发货页面完成出库。',
-          '今天开始租赁',
+          order.status === 'pending_payment'
+            ? `尚未确认付款，发货前请核实款项。${shippingRuleDescription}`
+            : `设备已分配，可进入待发货页面完成出库。${shippingRuleDescription}`,
+          `${formatDate(order.start_date)} 开始租赁`,
           equipmentMap,
         );
       } else if (daysUntilShip <= 2) {
@@ -267,9 +283,9 @@ export function buildOperationsSnapshot(
           order,
           'upcoming',
           'ship-upcoming',
-          `${daysUntilShip} 天后开始租赁`,
-          '建议提前完成设备、配件与物流信息核对。',
-          `${formatDate(order.start_date)} 开始`,
+          `${daysUntilShip} 天后需要发货`,
+          `建议提前完成设备、配件与物流信息核对。${shippingRuleDescription}`,
+          `${formatDateKey(shippingDateKey)} 发货`,
           equipmentMap,
         );
       }

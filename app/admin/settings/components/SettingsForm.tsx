@@ -65,14 +65,14 @@ export default function SettingsForm({ initialData }: SettingsFormProps) {
   };
 
   return (
-    <div className="flex flex-col gap-6 max-w-3xl">
+    <div className="flex max-w-3xl flex-col gap-4 sm:gap-6">
 
       {/* ── Toast ── */}
       {toast && (
         <div
           role="status"
           aria-live="polite"
-          className={`fixed bottom-8 right-8 z-50 flex items-center gap-3 rounded-2xl px-5 py-3.5 shadow-2xl backdrop-blur transition-all duration-300 ${
+          className={`fixed bottom-20 left-3 right-3 z-50 flex items-center gap-3 rounded-2xl px-4 py-3.5 shadow-2xl backdrop-blur transition-all duration-300 sm:bottom-8 sm:left-auto sm:right-8 sm:px-5 ${
             toast.type === 'success'
               ? 'bg-emerald-50/90 border border-emerald-200 text-emerald-700'
               : 'bg-rose-50/90 border border-rose-200 text-rose-700'
@@ -92,7 +92,7 @@ export default function SettingsForm({ initialData }: SettingsFormProps) {
         {/* subtle gradient accent */}
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-amber-300 to-transparent opacity-60" />
 
-        <div className="p-7">
+        <div className="p-4 sm:p-7">
           {/* Section header */}
           <div className="flex items-start justify-between gap-4 mb-6">
             <div className="flex items-center gap-3.5">
@@ -104,7 +104,7 @@ export default function SettingsForm({ initialData }: SettingsFormProps) {
                 <p className="mt-0.5 text-sm text-slate-500">用于自动同步闲鱼平台订单凭证</p>
               </div>
             </div>
-            <div className="flex items-center gap-1.5 rounded-full bg-slate-50 px-3 py-1.5 text-xs text-slate-400 ring-1 ring-slate-200">
+            <div className="hidden items-center gap-1.5 rounded-full bg-slate-50 px-3 py-1.5 text-xs text-slate-400 ring-1 ring-slate-200 sm:flex">
               <Shield className="h-3 w-3" />
               账号权限保护
             </div>
@@ -138,7 +138,7 @@ export default function SettingsForm({ initialData }: SettingsFormProps) {
       <div className="group relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-sm transition-shadow hover:shadow-md">
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-sky-300 to-transparent opacity-60" />
 
-        <div className="p-7">
+        <div className="p-4 sm:p-7">
           <div className="flex items-start justify-between gap-4 mb-6">
             <div className="flex items-center gap-3.5">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-50 to-blue-50 ring-1 ring-sky-100">
@@ -207,18 +207,18 @@ export default function SettingsForm({ initialData }: SettingsFormProps) {
       </div>
 
       {/* ── Footer actions ── */}
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <div className="flex items-center gap-2 text-sm text-slate-400">
           <Lock className="h-3.5 w-3.5" />
           <span>配置受登录鉴权与数据库行级权限保护，仅当前账号可访问</span>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-3">
           <Button
             variant="outline"
             size="sm"
             onClick={() => setForm(initialData ?? EMPTY)}
             disabled={saving || !isDirty}
-            className="h-9 rounded-xl border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+            className="h-11 w-full rounded-xl border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40 sm:h-9 sm:w-auto"
           >
             放弃更改
           </Button>
@@ -226,7 +226,7 @@ export default function SettingsForm({ initialData }: SettingsFormProps) {
             size="sm"
             onClick={save}
             disabled={saving || !isDirty}
-            className="h-9 gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 px-5 text-sm font-medium text-white shadow-sm hover:from-indigo-500 hover:to-indigo-600 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-40"
+            className="h-11 w-full gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 px-3 text-sm font-medium text-white shadow-sm hover:from-indigo-500 hover:to-indigo-600 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-40 sm:h-9 sm:w-auto sm:px-5"
           >
             {saving ? (
               <>
@@ -292,14 +292,14 @@ function PasswordInput({
         value={value}
         onChange={onChange}
         autoComplete="new-password"
-        className="h-11 rounded-xl border-slate-200 bg-slate-50/50 pr-10 text-[14px] transition-colors placeholder:text-slate-400 focus:border-amber-300 focus:bg-white focus:ring-2 focus:ring-amber-50"
+        className="h-11 rounded-xl border-slate-200 bg-slate-50/50 pr-12 text-[14px] transition-colors placeholder:text-slate-400 focus:border-amber-300 focus:bg-white focus:ring-2 focus:ring-amber-50"
       />
       <button
         type="button"
         onClick={() => setShow((s) => !s)}
         aria-label={show ? `隐藏${fieldLabel}` : `显示${fieldLabel}`}
         aria-pressed={show}
-        className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+        className="absolute right-0 top-1/2 flex size-11 -translate-y-1/2 items-center justify-center rounded-xl text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
       >
         {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
       </button>

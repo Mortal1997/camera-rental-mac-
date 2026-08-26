@@ -17,7 +17,7 @@ export default async function OrdersLayout({ children }: { children: ReactNode }
   const activeCount = assignedOrders.filter((order) => order.status === 'using').length;
 
   return (
-    <section className="flex flex-col gap-6">
+    <section className="flex flex-col gap-4 sm:gap-6">
       <PageHeader
         eyebrow="Order Management"
         title="订单管理"
@@ -26,14 +26,14 @@ export default async function OrdersLayout({ children }: { children: ReactNode }
       />
 
       <SurfaceCard className="p-0">
-        <div className="border-b border-border/70 px-6 py-5">
+        <div className="border-b border-border/70 px-3 py-3 sm:px-6 sm:py-5">
           <ClientTabs
             dispatchCount={dispatchCount}
             pendingCount={pendingCount}
             activeCount={activeCount}
           />
         </div>
-        <div className="px-6 py-6">{children}</div>
+        <div className="px-3 py-4 sm:px-6 sm:py-6">{children}</div>
       </SurfaceCard>
     </section>
   );

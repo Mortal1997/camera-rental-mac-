@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useSyncExternalStore } from 'react';
 import { TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '../components/ui';
@@ -8,9 +8,15 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } f
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts';
 import { formatCurrency } from './_format';
 
-function prefersReducedMotion(): boolean {
+function getReducedMotion(): boolean {
   if (typeof window === 'undefined') return false;
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+function subscribeToReducedMotion(onStoreChange: () => void) {
+  const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+  mediaQuery.addEventListener('change', onStoreChange);
+  return () => mediaQuery.removeEventListener('change', onStoreChange);
 }
 
 export type MonthlyRevenuePoint = {
@@ -42,12 +48,7 @@ function formatShortCurrency(value: number) {
 }
 
 export function MonthlyRevenueLineChart({ year, currentMonth, points }: MonthlyRevenueLineChartProps) {
-  const [reducedMotion, setReducedMotion] = useState(prefersReducedMotion());
-
-  if (typeof window !== 'undefined') {
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    if (!reducedMotion && mq.matches) setReducedMotion(true);
-  }
+  const reducedMotion = useSyncExternalStore(subscribeToReducedMotion, getReducedMotion, () => false);
 
   // 只画到当前月（currentMonth，1-12）；未到的月份不画
   const endMonth = Math.min(Math.max(currentMonth, 1), 12);
@@ -94,7 +95,7 @@ export function MonthlyRevenueLineChart({ year, currentMonth, points }: MonthlyR
   );
 
   return (
-    <Card className="flex h-full min-h-[420px] flex-col overflow-hidden">
+    <Card className="flex h-full min-h-[360px] flex-col overflow-hidden sm:min-h-[420px]">
       <CardHeader className="flex-row items-start justify-between gap-3">
         <div className="space-y-1">
           <CardTitle className="flex items-center gap-2">
@@ -119,13 +120,13 @@ export function MonthlyRevenueLineChart({ year, currentMonth, points }: MonthlyR
         </div>
       </CardHeader>
 
-<CardContent className="flex-1">
+      <CardContent className="flex-1">
         {!hasAnyRevenue ? (
           <EmptyState>{year} 年暂无营收数据</EmptyState>
         ) : (
           <ChartContainer
             config={CHART_CONFIG}
-            className="h-[260px] w-full"
+            className="h-[230px] w-full sm:h-[260px]"
             initialDimension={{ width: 720, height: 260 }}
           >
               <LineChart
@@ -198,7 +199,7 @@ export function MonthlyRevenueLineChart({ year, currentMonth, points }: MonthlyR
                   animationBegin={0}
                   animationEasing="ease-out"
                 />
-</LineChart>
+              </LineChart>
           </ChartContainer>
         )}
       </CardContent>

@@ -5,7 +5,12 @@ import { buildOperationsSnapshot } from '@/lib/operations';
 
 export const dynamic = 'force-dynamic';
 
-export default async function OperationsPage() {
+export default async function OperationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ scan?: string }>;
+}) {
+  const { scan } = await searchParams;
   const { equipment, equipmentList, orders } = await getAdminData();
   const snapshot = buildOperationsSnapshot(equipment as EquipmentWithOrders[], orders);
 
@@ -14,6 +19,7 @@ export default async function OperationsPage() {
       snapshot={snapshot}
       equipment={equipmentList}
       orders={orders}
+      initialScanOpen={scan === '1'}
     />
   );
 }

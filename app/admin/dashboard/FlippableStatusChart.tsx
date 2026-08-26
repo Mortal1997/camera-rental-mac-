@@ -1,15 +1,21 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { ArrowLeftRight, CheckCircle2, PackageCheck, Truck, Wrench, AlertTriangle, type LucideIcon } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState, cn } from '../components/ui';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
 import { Pie, PieChart, Cell } from 'recharts';
 
-function prefersReducedMotion(): boolean {
+function getReducedMotion(): boolean {
   if (typeof window === 'undefined') return false;
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+function subscribeToReducedMotion(onStoreChange: () => void) {
+  const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+  mediaQuery.addEventListener('change', onStoreChange);
+  return () => mediaQuery.removeEventListener('change', onStoreChange);
 }
 
 type Slice = {
@@ -51,19 +57,14 @@ export type FlippableStatusChartProps = {
 
 export function FlippableStatusChart({ total, counts }: FlippableStatusChartProps) {
   const [flipped, setFlipped] = useState(false);
-  const [reducedMotion, setReducedMotion] = useState(prefersReducedMotion);
-
-  if (typeof window !== 'undefined') {
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    if (!reducedMotion && mq.matches) setReducedMotion(true);
-  }
+  const reducedMotion = useSyncExternalStore(subscribeToReducedMotion, getReducedMotion, () => false);
 
   const slices: Slice[] = SLICES.map((s) => ({ ...s, count: counts[s.key] }));
   const pieData = slices.filter((s) => s.count > 0);
   const hasData = total > 0;
 
   return (
-    <Card className="flex h-full min-h-[420px] flex-col overflow-hidden">
+    <Card className="flex h-full min-h-[350px] flex-col overflow-hidden sm:min-h-[420px]">
       <CardHeader className="flex-row items-start justify-between gap-3">
         <div className="space-y-1">
           <CardTitle>当前状态占比</CardTitle>
@@ -73,7 +74,7 @@ export function FlippableStatusChart({ total, counts }: FlippableStatusChartProp
           type="button"
           onClick={() => setFlipped((f) => !f)}
           aria-label={flipped ? '查看饼图' : '查看详细数据'}
-          className="inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition hover:bg-slate-50 hover:text-slate-900"
+          className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md border border-border/70 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition hover:bg-slate-50 hover:text-slate-900 sm:min-h-0"
         >
           <ArrowLeftRight className="h-3.5 w-3.5" />
           {flipped ? '查看饼图' : '查看明细'}
@@ -85,23 +86,25 @@ export function FlippableStatusChart({ total, counts }: FlippableStatusChartProp
           <EmptyState>暂无设备数据</EmptyState>
         ) : (
           <div
-            className="relative h-full min-h-[280px] [perspective:1200px]"
+            className="relative h-[320px] [perspective:1200px] sm:h-[340px]"
             style={{ perspective: '1200px' }}
           >
             <div
               className={cn(
-                'relative w-full transition-transform duration-500 [transform-style:preserve-3d]',
+                'relative h-full w-full transition-transform duration-500 [transform-style:preserve-3d]',
                 flipped && '[transform:rotateY(180deg)]',
+                reducedMotion && 'transition-none',
               )}
             >
               {/* FRONT — pie chart */}
               <div
                 className="[backface-visibility:hidden]"
+                aria-hidden={flipped}
                 style={{ backfaceVisibility: 'hidden' }}
               >
                 <ChartContainer
                   config={CHART_CONFIG}
-                  className="mx-auto aspect-square h-[260px]"
+                  className="mx-auto aspect-square h-[210px] sm:h-[260px]"
                 >
                   <PieChart>
                     <ChartTooltip
@@ -158,7 +161,10 @@ export function FlippableStatusChart({ total, counts }: FlippableStatusChartProp
 
               {/* BACK — detailed table */}
               <div
-                className="absolute inset-0 z-10 [backface-visibility:hidden] [transform:rotateY(180deg)]"
+                className="absolute inset-0 z-10 overflow-y-auto overscroll-contain pr-1 [backface-visibility:hidden] [transform:rotateY(180deg)]"
+                aria-hidden={!flipped}
+                aria-label="设备状态明细"
+                tabIndex={flipped ? 0 : -1}
                 style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}
               >
                 <div className="space-y-2 rounded-lg border border-slate-100 bg-slate-50/50 p-2.5">

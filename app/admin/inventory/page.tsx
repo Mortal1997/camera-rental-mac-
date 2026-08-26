@@ -8,7 +8,7 @@ export default async function InventoryPage() {
   const equipment = await getEquipmentList();
 
   return (
-    <section className="flex flex-col gap-6">
+    <section className="flex flex-col gap-4 sm:gap-6">
       <PageHeader
         eyebrow="Inventory"
         title="仓库设备管理"

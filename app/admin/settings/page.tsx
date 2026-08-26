@@ -21,7 +21,7 @@ export default async function SettingsPage() {
     .maybeSingle();
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4 sm:gap-6">
       <PageHeader
         eyebrow="Settings"
         title="系统设置"

@@ -88,7 +88,7 @@ export function FinanceMonthlyTrendChart({ points, startMonth, endMonth }: Finan
   );
 
   return (
-    <Card className="flex h-full min-h-[440px] flex-col overflow-hidden">
+    <Card className="flex h-full min-h-[360px] flex-col overflow-hidden sm:min-h-[440px]">
       <CardHeader>
         <CardTitle>月度财务趋势</CardTitle>
         <CardDescription>
@@ -102,7 +102,7 @@ export function FinanceMonthlyTrendChart({ points, startMonth, endMonth }: Finan
         ) : (
           <ChartContainer
             config={CHART_CONFIG}
-            className="h-[320px] w-full"
+            className="h-[250px] w-full sm:h-[320px]"
             initialDimension={{ width: 720, height: 320 }}
           >
             <LineChart

@@ -2,6 +2,7 @@
 
 import {
   AlertTriangle,
+  CalendarDays,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -39,6 +40,18 @@ type SelectedOrderState = {
   equipmentId: string;
   equipmentName: string;
   category?: string;
+};
+
+type MobileAgendaItem = SelectedOrderState & {
+  startDate: Date | null;
+  endDate: Date | null;
+};
+
+type MobileAgendaGroup = {
+  key: 'overdue' | 'today' | 'upcoming' | 'unscheduled';
+  label: string;
+  description: string;
+  items: MobileAgendaItem[];
 };
 
 const HOLIDAYS_2026 = [
@@ -154,6 +167,25 @@ function getDateDiffInDays(start: Date, end: Date) {
   return Math.round((endDay - startDay) / MILLISECONDS_PER_DAY);
 }
 
+function getValidOrderDate(dateLike?: string | null) {
+  if (!dateLike) return null;
+  const date = getStartOfDay(dateLike);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatAgendaDate(date: Date) {
+  return `${date.getMonth() + 1}月${date.getDate()}日`;
+}
+
+function formatAgendaDateRange(item: MobileAgendaItem) {
+  const { startDate, endDate } = item;
+  if (!startDate || !endDate) return '租赁日期待补充';
+
+  const inclusiveDays = Math.max(1, getDateDiffInDays(startDate, endDate) + 1);
+  if (isSameDay(startDate, endDate)) return `${formatAgendaDate(startDate)} · 1 天`;
+  return `${formatAgendaDate(startDate)} – ${formatAgendaDate(endDate)} · ${inclusiveDays} 天`;
+}
+
 function toDateKey(date: Date) {
   const year = date.getFullYear();
   const month = `${date.getMonth() + 1}`.padStart(2, '0');
@@ -216,7 +248,6 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
   const [isDragging, setIsDragging] = useState(false);
   const [hoveredOrderId, setHoveredOrderId] = useState<string | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<SelectedOrderState | null>(null);
-  const pendingOrderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editDateRange, setEditDateRange] = useState<DateRange | undefined>();
   const [editForm, setEditForm] = useState({ customer_name: '', customer_phone: '', shipping_address: '', start_date: '', end_date: '', equipment_id: '', notes: '', total_price: '' });
@@ -236,10 +267,6 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
   const [resizableWidth, setResizableWidth] = useState(DEFAULT_STICKY_COLUMN_WIDTH);
   const effectiveResizableWidth = Math.max(MIN_STICKY_COLUMN_WIDTH, Math.min(MAX_STICKY_COLUMN_WIDTH, resizableWidth));
   const [portalTooltip, setPortalTooltip] = useState<{ mouseX: number; mouseY: number; order: Order; itemName: string; pillLabel: string; pillAccent: string; clampedSpan: number; renderSpan?: number; rawSpan: number } | null>(null);
-
-  useEffect(() => () => {
-    if (pendingOrderTimerRef.current) clearTimeout(pendingOrderTimerRef.current);
-  }, []);
 
   const days = useMemo(() => Array.from({ length: PAST_DAYS + FUTURE_DAYS }, (_, index) => {
     const date = new Date(today);
@@ -272,6 +299,71 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
   }, [equipment, searchTerm, categoryFilter, machineStatusFilter, today]);
 
   const totalOrders = useMemo(() => filteredEquipment.reduce((sum, item) => sum + item.orders.filter((o) => o.status !== 'cancelled').length, 0), [filteredEquipment]);
+  const mobileAgendaGroups = useMemo<MobileAgendaGroup[]>(() => {
+    const grouped: Record<MobileAgendaGroup['key'], MobileAgendaItem[]> = {
+      overdue: [],
+      today: [],
+      upcoming: [],
+      unscheduled: [],
+    };
+    const term = searchTerm.trim().toLowerCase();
+
+    filteredEquipment.forEach((item) => {
+      const equipmentMatchesSearch = !term
+        || item.name.toLowerCase().includes(term)
+        || (item.serial_number ?? '').toLowerCase().includes(term);
+
+      item.orders.forEach((order) => {
+        // The mobile workspace focuses on orders that still have a next operational step.
+        // This reuses the same status rules as the existing order detail actions.
+        if (!getNextStatusAction(order)) return;
+        if (
+          term
+          && !equipmentMatchesSearch
+          && !(order.customer_name ?? '').toLowerCase().includes(term)
+        ) return;
+
+        const startDate = getValidOrderDate(order.start_date);
+        const endDate = getValidOrderDate(order.end_date);
+        const agendaItem: MobileAgendaItem = {
+          order,
+          equipmentId: item.id,
+          equipmentName: item.name,
+          category: item.category,
+          startDate,
+          endDate,
+        };
+
+        if (!startDate || !endDate) {
+          grouped.unscheduled.push(agendaItem);
+        } else if (endDate && endDate < today) {
+          grouped.overdue.push(agendaItem);
+        } else if (startDate && endDate && startDate <= today && endDate >= today) {
+          grouped.today.push(agendaItem);
+        } else {
+          grouped.upcoming.push(agendaItem);
+        }
+      });
+    });
+
+    const getStartTime = (item: MobileAgendaItem) => (item.startDate ?? item.endDate)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+    const getEndTime = (item: MobileAgendaItem) => (item.endDate ?? item.startDate)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+    grouped.overdue.sort((left, right) => getEndTime(left) - getEndTime(right));
+    grouped.today.sort((left, right) => getEndTime(left) - getEndTime(right));
+    grouped.upcoming.sort((left, right) => getStartTime(left) - getStartTime(right));
+    grouped.unscheduled.sort((left, right) => left.equipmentName.localeCompare(right.equipmentName, 'zh-CN'));
+
+    return [
+      { key: 'overdue', label: '逾期待处理', description: '租期已结束，仍需完成归还或状态处理', items: grouped.overdue },
+      { key: 'today', label: '今天进行中', description: '今天需要重点关注的发货与租用任务', items: grouped.today },
+      { key: 'upcoming', label: '即将开始', description: '按开始日期由近到远排列', items: grouped.upcoming },
+      { key: 'unscheduled', label: '待安排日期', description: '缺少完整租赁日期，需要补充信息', items: grouped.unscheduled },
+    ].filter((group) => group.items.length > 0) as MobileAgendaGroup[];
+  }, [filteredEquipment, searchTerm, today]);
+  const mobileAgendaCount = useMemo(
+    () => mobileAgendaGroups.reduce((sum, group) => sum + group.items.length, 0),
+    [mobileAgendaGroups],
+  );
   const currentStatus = selectedOrder ? getStatusPill(selectedOrder.order.status) : null;
   const nextStatusAction = selectedOrder ? getNextStatusAction(selectedOrder.order) : null;
 
@@ -331,6 +423,15 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
     setSearchTerm('');
     setMachineStatusFilter('all');
     setCategoryFilter('all');
+  };
+
+  const openOrderDetails = (orderData: SelectedOrderState) => {
+    setActionError(null);
+    setCopyMessage(null);
+    setConfirmShip(false);
+    setTrackingNumberInput(orderData.order.tracking_number || '');
+    setShipMethod('express');
+    setSelectedOrder(orderData);
   };
 
   const handleCopy = async (value: string, successText: string) => {
@@ -515,8 +616,8 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
           />
 
           <FilterPanel className="xl:grid-cols-[minmax(0,1.3fr)_auto] xl:items-end">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
-              <label className="flex flex-col gap-1.5 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)] sm:hidden">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
+              <label className="col-span-2 flex flex-col gap-1.5 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)] sm:hidden">
                 搜索
                 <TextInput aria-label="搜索设备、序列号或客户" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="设备名 / 序列号 / 客户名" />
               </label>
@@ -545,17 +646,106 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
 
             <div className="flex flex-col gap-3 xl:items-end">
               <div className="-mx-1 flex flex-nowrap items-center gap-1.5 overflow-x-auto px-1 pb-1 sm:mx-0 sm:flex-wrap sm:gap-2 sm:overflow-visible sm:px-0 sm:pb-0">
-                <SecondaryButton onClick={() => scrollByDays(-1)}><ChevronLeft className="h-4 w-4" />上周</SecondaryButton>
-                <PrimaryButton onClick={() => scrollToDayIndex(PAST_DAYS)}>跳转今天</PrimaryButton>
-                <SecondaryButton onClick={() => scrollByDays(1)}>下周<ChevronRight className="h-4 w-4" /></SecondaryButton>
+                <div className="hidden items-center gap-2 lg:flex">
+                  <SecondaryButton onClick={() => scrollByDays(-1)}><ChevronLeft className="h-4 w-4" />上周</SecondaryButton>
+                  <PrimaryButton onClick={() => scrollToDayIndex(PAST_DAYS)}>跳转今天</PrimaryButton>
+                  <SecondaryButton onClick={() => scrollByDays(1)}>下周<ChevronRight className="h-4 w-4" /></SecondaryButton>
+                </div>
                 <SecondaryButton onClick={resetFilters}><RotateCcw className="h-4 w-4" />重置筛选</SecondaryButton>
               </div>
               <div className="-mx-1 flex flex-nowrap gap-1.5 overflow-x-auto px-1 text-xs text-[var(--text-muted)] sm:flex-wrap sm:gap-2 sm:overflow-visible sm:px-0">
-                <StatBadge tone="slate">范围：{toDateKey(days[0])} ~ {toDateKey(days[days.length - 1])}</StatBadge>
-                <StatBadge tone="slate">当前结果：{filteredEquipment.length} 台 / {totalOrders} 条排期</StatBadge>
+                <div className="hidden flex-wrap gap-2 lg:flex">
+                  <StatBadge tone="slate">范围：{toDateKey(days[0])} ~ {toDateKey(days[days.length - 1])}</StatBadge>
+                  <StatBadge tone="slate">当前结果：{filteredEquipment.length} 台 / {totalOrders} 条排期</StatBadge>
+                </div>
+                <div className="lg:hidden">
+                  <StatBadge tone="slate">待处理：{mobileAgendaCount} 条</StatBadge>
+                </div>
               </div>
             </div>
           </FilterPanel>
+        </div>
+
+        <div className="space-y-5 px-4 py-5 lg:hidden">
+          <div className="flex items-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50/70 px-3 py-2.5">
+            <CalendarDays className="h-4 w-4 shrink-0 text-indigo-600" aria-hidden="true" />
+            <p className="text-xs font-medium text-slate-700">手机日程已按处理优先级排序，点击卡片进入订单。</p>
+          </div>
+
+          {mobileAgendaGroups.length === 0 ? (
+            <EmptyState>当前筛选条件下没有待处理排期，可重置筛选查看其他设备。</EmptyState>
+          ) : (
+            mobileAgendaGroups.map((group) => {
+              const sectionTone = group.key === 'overdue'
+                ? 'border-rose-200 bg-rose-50 text-rose-700'
+                : group.key === 'today'
+                  ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                  : group.key === 'unscheduled'
+                    ? 'border-amber-200 bg-amber-50 text-amber-700'
+                    : 'border-slate-200 bg-slate-50 text-slate-700';
+              const SectionIcon = group.key === 'overdue' ? AlertTriangle : group.key === 'upcoming' ? CalendarDays : Clock;
+              const headingId = `mobile-agenda-${group.key}`;
+
+              return (
+                <section key={group.key} aria-labelledby={headingId} className="space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-start gap-2.5">
+                      <span className={cn('mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border', sectionTone)}>
+                        <SectionIcon className="h-4 w-4" aria-hidden="true" />
+                      </span>
+                      <div className="min-w-0">
+                        <h3 id={headingId} className="text-sm font-semibold text-slate-900">{group.label}</h3>
+                        <p className="mt-0.5 text-xs leading-5 text-slate-500">{group.description}</p>
+                      </div>
+                    </div>
+                    <span className="inline-flex h-7 min-w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 px-2 text-xs font-semibold text-slate-600">{group.items.length}</span>
+                  </div>
+
+                  <ul className="space-y-2.5" role="list">
+                    {group.items.map((agendaItem) => {
+                      const pill = getStatusPill(agendaItem.order.status);
+                      const customerName = agendaItem.order.customer_name || '未填写客户';
+                      const dateLabel = formatAgendaDateRange(agendaItem);
+
+                      return (
+                        <li key={`${agendaItem.equipmentId}-${agendaItem.order.id}`}>
+                          <button
+                            type="button"
+                            onClick={() => openOrderDetails({
+                              order: agendaItem.order,
+                              equipmentId: agendaItem.equipmentId,
+                              equipmentName: agendaItem.equipmentName,
+                              category: agendaItem.category,
+                            })}
+                            aria-label={`查看${agendaItem.equipmentName}，客户${customerName}，${dateLabel}的订单详情`}
+                            className="group min-h-24 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-left shadow-sm transition-[border-color,box-shadow,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 active:scale-[0.99]"
+                          >
+                            <span className="flex items-start justify-between gap-3">
+                              <span className="min-w-0">
+                                <span className="block truncate text-[15px] font-semibold text-slate-900">{agendaItem.equipmentName}</span>
+                                <span className="mt-1 flex items-center gap-1.5 text-xs text-slate-500">
+                                  <UserRound className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                                  <span className="truncate">{customerName}</span>
+                                </span>
+                              </span>
+                              <span className="flex shrink-0 items-center gap-2">
+                                <span className={cn('rounded-full px-2.5 py-1 text-[11px] font-semibold', pill.accent)}>{pill.label}</span>
+                                <ChevronRight className="h-4 w-4 text-slate-400 transition-transform group-active:translate-x-0.5" aria-hidden="true" />
+                              </span>
+                            </span>
+                            <span className="mt-3 flex items-center gap-1.5 border-t border-slate-100 pt-2.5 text-xs font-medium text-slate-600">
+                              <Clock className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden="true" />
+                              {dateLabel}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              );
+            })
+          )}
         </div>
 
         <div
@@ -564,7 +754,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
           onMouseLeave={stopDragging}
           onMouseUp={stopDragging}
           onMouseMove={handleMouseMove}
-          className={cn('overflow-x-auto overflow-y-visible select-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden', isDragging ? 'cursor-grabbing' : 'cursor-grab')}
+          className={cn('hidden overflow-x-auto overflow-y-visible select-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:block', isDragging ? 'cursor-grabbing' : 'cursor-grab')}
         >
           <div className="py-4">
           {filteredEquipment.length === 0 ? (
@@ -721,17 +911,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
                               <button
                                 type="button"
                                 onClick={() => {
-                                  if (pendingOrderTimerRef.current) clearTimeout(pendingOrderTimerRef.current);
-                                  setActionError(null);
-                                  setCopyMessage(null);
-                                  setConfirmShip(false);
-                                  setTrackingNumberInput(order.tracking_number || '');
-                                  setShipMethod('express');
-                                  const orderData = { order, equipmentId: item.id, equipmentName: item.name, category: item.category };
-                                  pendingOrderTimerRef.current = setTimeout(() => {
-                                    pendingOrderTimerRef.current = null;
-                                    setSelectedOrder(orderData);
-                                  }, 0);
+                                  openOrderDetails({ order, equipmentId: item.id, equipmentName: item.name, category: item.category });
                                 }}
                                 className={cn('block h-full w-full text-left outline-none transition-transform duration-150', isHovered && 'scale-[1.01]')}
                               >
@@ -790,7 +970,6 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
       <Modal
         open={Boolean(selectedOrder)}
         onClose={() => {
-          if (pendingOrderTimerRef.current) { clearTimeout(pendingOrderTimerRef.current); pendingOrderTimerRef.current = null; }
           setSelectedOrder(null);
           setIsEditing(false);
           setEditForm({ customer_name: '', customer_phone: '', shipping_address: '', start_date: '', end_date: '', equipment_id: '', notes: '', total_price: '' });
@@ -830,7 +1009,7 @@ export default function GanttChart({ equipment, equipmentList }: GanttChartProps
                       {nextStatusAction.label}
                     </SecondaryButton>
                   ) : null}
-                  <SecondaryButton onClick={() => { if (pendingOrderTimerRef.current) { clearTimeout(pendingOrderTimerRef.current); pendingOrderTimerRef.current = null; } setSelectedOrder(null); setActionError(null); setCopyMessage(null); setTrackingNumberInput(''); setConfirmShip(false); }}>关闭</SecondaryButton>
+                  <SecondaryButton onClick={() => { setSelectedOrder(null); setActionError(null); setCopyMessage(null); setTrackingNumberInput(''); setConfirmShip(false); }}>关闭</SecondaryButton>
                 </>
               ) : (
                 <>

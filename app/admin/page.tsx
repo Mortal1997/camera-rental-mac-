@@ -10,7 +10,7 @@ export default async function AdminPage() {
   const { equipment, equipmentList } = await getAdminData();
 
   return (
-    <section className="flex flex-col gap-6">
+    <section className="flex flex-col gap-4 sm:gap-6">
       <PageHeader
         eyebrow="Schedule Overview"
         title="智能租赁管理中控台"
